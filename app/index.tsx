@@ -1,15 +1,15 @@
-import React, { useEffect, useRef } from 'react';
+import { Colors } from '@/constants/Colors';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Location from 'expo-location';
+import { router } from 'expo-router';
+import { useEffect, useRef } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
   Animated,
   Dimensions,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
-import { router } from 'expo-router';
-import * as Location from 'expo-location';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Colors } from '@/constants/Colors';
 
 const { width, height } = Dimensions.get('window');
 
@@ -31,10 +31,19 @@ export default function SplashScreen() {
 
     const init = async () => {
       await Location.requestForegroundPermissionsAsync();
+
+      // Request background location for geofencing
+      // iOS requires foreground permission first before asking for background
+      const { status } = await Location.requestBackgroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.warn('Background location permission denied — geofencing disabled');
+      }
+
       setTimeout(() => {
         router.replace('/(tabs)/map');
       }, 2800);
     };
+    
     init();
   }, []);
 

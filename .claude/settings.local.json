@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx expo *)",
+      "Bash(npx tsc *)",
+      "Bash(xargs sed -i '' \"s|@/constants/colors|@/constants/Colors|g\")",
+      "Bash(xcrun simctl *)",
+      "Bash(xcode-select -p)",
+      "Bash(xcrun --version)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(curl -s http://localhost:8081)",
+      "Bash(echo \"PID=$!\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8081)",
+      "Bash('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless=new --no-sandbox --disable-gpu --window-size=390,844 --screenshot=/tmp/tappin_map.png http://localhost:8081)",
+      "Bash(echo \"exit: $?\")",
+      "Bash('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless=new --no-sandbox --disable-gpu --window-size=390,844 --virtual-time-budget=4000 --screenshot=/tmp/tappin_map2.png http://localhost:8081)",
+      "Bash(echo \"done: $?\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:8081\")",
+      "Bash(curl -s \"http://localhost:8081/_expo/static/js/web/entry.js\")",
+      "Bash(git remote *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
+    ]
+  }
+}
