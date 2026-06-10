@@ -39,8 +39,15 @@ export default function SplashScreen() {
         console.warn('Background location permission denied — geofencing disabled');
       }
 
+      const { isLoggedIn } = await import('@/services/auth');
+      const loggedIn = await isLoggedIn();
+
       setTimeout(() => {
-        router.replace('/(tabs)/map');
+        if (loggedIn) {
+          router.replace('/(tabs)/map');
+        } else {
+          router.replace('/auth/phone' as any);
+        }
       }, 2800);
     };
     

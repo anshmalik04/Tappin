@@ -71,6 +71,14 @@ export default function RootLayout() {
           name="chat/[id]"
           options={{ headerShown: false, presentation: 'card' }}
         />
+        <Stack.Screen
+          name="auth/phone"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="auth/otp"
+          options={{ headerShown: false }}
+        />
       </Stack>
     </CheckInProvider>
   );
