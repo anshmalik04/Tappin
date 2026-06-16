@@ -1,22 +1,21 @@
-import React, { useState, useRef, useEffect } from 'react';
+import HeatDot from '@/components/HeatDot';
+import { Colors } from '@/constants/Colors';
+import type { HeatLevel } from '@/data/mockData';
+import { venues } from '@/data/mockData';
+import { router } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Dimensions,
   Animated,
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
   TextInput,
-  Platform,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
-import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors } from '@/constants/Colors';
-import { venues } from '@/data/mockData';
-import HeatDot from '@/components/HeatDot';
-import type { HeatLevel } from '@/data/mockData';
 
 const { width, height } = Dimensions.get('window');
 const PHILLY_CENTER = { latitude: 39.9526, longitude: -75.1652 };
@@ -93,12 +92,8 @@ function PulsingMarker({ level }: { level: HeatLevel }) {
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState('All');
-  const [activeVenue] = useState(venues[0]);
+  const [selectedVenue, setSelectedVenue] = useState<typeof venues[0] | null>(null);
   const slideUp = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.spring(slideUp, { toValue: 1, friction: 8, useNativeDriver: true }).start();
-  }, []);
 
   return (
     <View style={styles.container}>
@@ -119,7 +114,11 @@ export default function MapScreen() {
           <Marker
             key={v.id}
             coordinate={{ latitude: v.latitude, longitude: v.longitude }}
-            onPress={() => router.push(`/venue/${v.id}`)}
+            onPress={() => {
+              setSelectedVenue(v);
+              slideUp.setValue(0);
+              Animated.spring(slideUp, { toValue: 1, friction: 8, useNativeDriver: true }).start();
+            }}
             anchor={{ x: 0.5, y: 0.5 }}
           >
             <PulsingMarker level={v.heatLevel} />
@@ -174,51 +173,63 @@ export default function MapScreen() {
       {/* User location dot overlay hint */}
       <View style={styles.userDotGlow} pointerEvents="none" />
 
-      {/* Bottom card */}
-      <Animated.View
-        style={[
-          styles.bottomCard,
-          {
-            paddingBottom: insets.bottom + 96,
-            transform: [
-              {
-                translateY: slideUp.interpolate({ inputRange: [0, 1], outputRange: [200, 0] }),
-              },
-            ],
-          },
-        ]}
-      >
-        <View style={styles.cardHandle} />
-        <View style={styles.cardRow}>
-          <HeatDot level={activeVenue.heatLevel} size={14} animate />
-          <View style={styles.cardInfo}>
-            <Text style={styles.cardName}>{activeVenue.name}</Text>
-            <Text style={styles.cardMeta}>
-              {activeVenue.type} · {activeVenue.distance} · {activeVenue.hours}
-            </Text>
-          </View>
+      {/* Bottom card - only shows when a venue marker is tapped */}
+      {selectedVenue && (
+        <Animated.View
+          style={[
+            styles.bottomCard,
+            {
+              paddingBottom: insets.bottom + 96,
+              transform: [
+                {
+                  translateY: slideUp.interpolate({ inputRange: [0, 1], outputRange: [400, 0] }),
+                },
+              ],
+            },
+          ]}
+        >
+          <View style={styles.cardHandle} />
           <TouchableOpacity
-            style={styles.viewBtn}
-            onPress={() => router.push(`/venue/${activeVenue.id}`)}
+            style={styles.closeBtn}
+            onPress={() => {
+              Animated.spring(slideUp, { toValue: 0, friction: 8, useNativeDriver: true }).start(() => {
+                setSelectedVenue(null);
+              });
+            }}
           >
-            <Text style={styles.viewBtnText}>View →</Text>
+            <Text style={styles.closeBtnText}>✕</Text>
           </TouchableOpacity>
-        </View>
-
-        <View style={styles.coverRow}>
-          <View style={styles.coverBadge}>
-            <Text style={styles.coverText}>Cover: {activeVenue.cover}</Text>
-          </View>
-        </View>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
-          {activeVenue.tags.map((tag, i) => (
-            <View key={i} style={styles.tag}>
-              <Text style={styles.tagText}>{tag}</Text>
+          <View style={styles.cardRow}>
+            <HeatDot level={selectedVenue.heatLevel} size={14} animate />
+            <View style={styles.cardInfo}>
+              <Text style={styles.cardName}>{selectedVenue.name}</Text>
+              <Text style={styles.cardMeta}>
+                {selectedVenue.type} · {selectedVenue.distance} · {selectedVenue.hours}
+              </Text>
             </View>
-          ))}
-        </ScrollView>
-      </Animated.View>
+            <TouchableOpacity
+              style={styles.viewBtn}
+              onPress={() => router.push(`/venue/${selectedVenue.id}`)}
+            >
+              <Text style={styles.viewBtnText}>View →</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.coverRow}>
+            <View style={styles.coverBadge}>
+              <Text style={styles.coverText}>Cover: {selectedVenue.cover}</Text>
+            </View>
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+            {selectedVenue.tags.map((tag, i) => (
+              <View key={i} style={styles.tag}>
+                <Text style={styles.tagText}>{tag}</Text>
+              </View>
+            ))}
+          </ScrollView>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -320,6 +331,19 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 12,
   },
+  closeBtn: {
+    position: 'absolute',
+    top: 12,
+    right: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  closeBtnText: { fontSize: 14, fontWeight: '700', color: Colors.textMuted },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   cardInfo: { flex: 1 },
   cardName: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary },

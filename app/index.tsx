@@ -40,7 +40,21 @@ export default function SplashScreen() {
       }
 
       const { isLoggedIn } = await import('@/services/auth');
+      const { fetchAuthSession } = await import('aws-amplify/auth');
+      try {
+        const session = await fetchAuthSession();
+        console.log('[DEBUG] session:', JSON.stringify({
+          hasTokens: !!session.tokens,
+          hasIdToken: !!session.tokens?.idToken,
+          hasAccessToken: !!session.tokens?.accessToken,
+          hasCredentials: !!session.credentials,
+          identityId: session.identityId,
+        }, null, 2));
+      } catch (e: any) {
+        console.log('[DEBUG] fetchAuthSession threw:', e?.name, e?.message);
+      }
       const loggedIn = await isLoggedIn();
+      console.log('[DEBUG] isLoggedIn() returned:', loggedIn);
 
       setTimeout(() => {
         if (loggedIn) {

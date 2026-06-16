@@ -1,11 +1,23 @@
 import { API_BASE_URL } from '@/constants/config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchAuthSession } from 'aws-amplify/auth';
 
 const WS_URL = 'wss://lfcdr0kcn9.execute-api.us-east-1.amazonaws.com/production';
 
 // ─── Core fetch wrapper ───────────────────────────────────────────────────────
 async function apiFetch(path, options = {}) {
-  const token = await AsyncStorage.getItem('tappin_jwt');
+  let token;
+  try {
+    const session = await fetchAuthSession();
+    token = session.tokens?.idToken?.toString();
+  } catch (err) {
+    console.log('[DEBUG] fetchAuthSession error:', err?.message || err);
+    token = null;
+  }
+
+  const staticToken = await AsyncStorage.getItem('tappin_jwt');
+  console.log('[DEBUG] fetchAuthSession token:', token ? `present (${token.length} chars)` : 'none/undefined');
+  console.log('[DEBUG] AsyncStorage tappin_jwt:', staticToken ? `present (${staticToken.length} chars)` : 'none/empty');
 
   const headers = {
     'Content-Type': 'application/json',
@@ -126,7 +138,7 @@ export async function getEmergencyContacts() {
 export async function createEmergencyContact(name, phone) {
   return apiFetch('/emergency-contacts', {
     method: 'POST',
-    body: JSON.stringify({ name, phone }),
+    body: JSON.stringify({ name, phone_number: phone }),
   });
 }
 
@@ -148,7 +160,13 @@ export function connectWebSocket(onHeatmapUpdate, onChatMessage) {
   chatCallback = onChatMessage;
 
   const connect = async () => {
-    const token = await AsyncStorage.getItem('tappin_jwt');
+    let token;
+    try {
+      const session = await fetchAuthSession();
+      token = session.tokens?.idToken?.toString();
+    } catch {
+      token = null;
+    }
     ws = new WebSocket(`${WS_URL}?token=${token}`);
 
     ws.onopen = () => {

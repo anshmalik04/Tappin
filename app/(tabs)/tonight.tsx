@@ -1,18 +1,17 @@
-import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-} from 'react-native';
-import { router } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors } from '@/constants/Colors';
-import { venues, events } from '@/data/mockData';
-import { useCheckIn } from '@/context/CheckInContext';
 import { HeatDotInline } from '@/components/HeatDot';
+import { Colors } from '@/constants/Colors';
+import { useCheckIn } from '@/context/CheckInContext';
 import type { HeatLevel } from '@/data/mockData';
+import { events, venues } from '@/data/mockData';
+import { router } from 'expo-router';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const heatLabel: Record<HeatLevel, string> = {
   hot: 'Hot',
@@ -98,7 +97,7 @@ export default function TonightScreen() {
               ]}
               onPress={(e) => {
                 e.stopPropagation();
-                toggleCheckIn(venue.id);
+                toggleCheckIn(venue.id, venue.latitude, venue.longitude);
               }}
               disabled={maxReached}
             >
@@ -123,23 +122,33 @@ export default function TonightScreen() {
       </View>
 
       {events.map((event) => (
-        <View key={event.id} style={styles.eventCard}>
+        <TouchableOpacity
+          key={event.id}
+          style={styles.eventCard}
+          onPress={() => router.push(`/venue/${event.venueId}`)}
+          activeOpacity={0.9}
+        >
           <View style={styles.eventInfo}>
             <Text style={styles.eventName}>{event.name}</Text>
             <Text style={styles.eventMeta}>
               {event.time} · {event.distance} · {event.venue}
             </Text>
-            <Text style={styles.eventInterest}>{event.interestedCount} interested</Text>
           </View>
           <View style={styles.eventActions}>
-            <TouchableOpacity style={styles.goingBtn}>
+            <TouchableOpacity
+              style={styles.goingBtn}
+              onPress={(e) => e.stopPropagation()}
+            >
               <Text style={styles.goingBtnText}>I'm Going</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.interestedBtn}>
+            <TouchableOpacity
+              style={styles.interestedBtn}
+              onPress={(e) => e.stopPropagation()}
+            >
               <Text style={styles.interestedBtnText}>Interested</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </TouchableOpacity>
       ))}
     </ScrollView>
   );
@@ -212,7 +221,6 @@ const styles = StyleSheet.create({
   eventInfo: { marginBottom: 12 },
   eventName: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary },
   eventMeta: { fontSize: 12, color: Colors.textMuted, marginTop: 3 },
-  eventInterest: { fontSize: 12, fontWeight: '600', color: Colors.primary, marginTop: 4 },
   eventActions: { flexDirection: 'row', gap: 10 },
   goingBtn: {
     flex: 1,

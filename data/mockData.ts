@@ -51,6 +51,7 @@ export interface Event {
   interestedCount: number;
   distance: string;
   venue: string;
+  venueId: string;
 }
 
 export const venues: Venue[] = [
@@ -214,6 +215,38 @@ export const venues: Venue[] = [
     ],
     coverInfo: 'Free entry all night',
   },
+  {
+    id: '6',
+    name: 'The Rooftop at Cira Green',
+    type: 'Rooftop Bar',
+    address: '129 S 30th St, Philadelphia, PA',
+    latitude: 39.9526,
+    longitude: -75.1838,
+    heatLevel: 'mild',
+    cover: 'Free',
+    peakHours: '7–9pm',
+    vibe: 'Chill',
+    tags: ['🎷 Live jazz', '24-34 avg', '🌇 Rooftop views'],
+    distance: '0.4 mi',
+    hours: 'Open until 11pm',
+    demographics: [
+      { label: '21-25', percentage: 25 },
+      { label: '26-30', percentage: 45 },
+      { label: '31+', percentage: 30 },
+    ],
+    traffic: [
+      { hour: '6pm', level: 20 },
+      { hour: '7pm', level: 45 },
+      { hour: '8pm', level: 65 },
+      { hour: '9pm', level: 55 },
+      { hour: '10pm', level: 35 },
+      { hour: '11pm', level: 15 },
+      { hour: '12am', level: 5 },
+      { hour: '1am', level: 0 },
+      { hour: '2am', level: 0 },
+    ],
+    coverInfo: 'Free entry · Rooftop Jazz Night tonight at 8PM',
+  },
 ];
 
 export const users: User[] = [
@@ -299,6 +332,7 @@ export const events: Event[] = [
     interestedCount: 124,
     distance: '0.4 mi',
     venue: 'The Rooftop at Cira Green',
+    venueId: '6',
   },
   {
     id: 'e2',
@@ -307,5 +341,6 @@ export const events: Event[] = [
     interestedCount: 89,
     distance: '0.7 mi',
     venue: 'Coda',
+    venueId: '3',
   },
 ];

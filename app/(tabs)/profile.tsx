@@ -1,15 +1,23 @@
+import { Colors } from '@/constants/Colors';
+import { router } from 'expo-router';
 import React from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
   ScrollView,
+  StyleSheet,
+  Text,
   TouchableOpacity,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors } from '@/constants/Colors';
 
-const settings = [
+const settings: {
+  icon: string;
+  label: string;
+  description: string;
+  iconBg: string;
+  iconColor: string;
+  route?: string;
+}[] = [
   {
     icon: '📸',
     label: 'Photos',
@@ -37,6 +45,7 @@ const settings = [
     description: '2 contacts set up',
     iconBg: Colors.dangerLight,
     iconColor: Colors.danger,
+    route: '/emergency-contacts',
   },
   {
     icon: '👁',
@@ -74,7 +83,7 @@ export default function ProfileScreen() {
           <Text style={styles.userName}>Vamshi P.</Text>
           <Text style={styles.verified}>✓ Verified</Text>
         </View>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={() => router.push('/edit-profile' as any)}>
           <Text style={styles.editLink}>Edit Profile →</Text>
         </TouchableOpacity>
       </View>
@@ -83,7 +92,12 @@ export default function ProfileScreen() {
       <View style={styles.settingsList}>
         {settings.map((s, i) => (
           <React.Fragment key={s.label}>
-            <TouchableOpacity style={styles.settingRow} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={styles.settingRow}
+              activeOpacity={0.7}
+              onPress={() => s.route && router.push(s.route as any)}
+              disabled={!s.route}
+            >
               <View style={[styles.settingIcon, { backgroundColor: s.iconBg }]}>
                 <Text style={styles.settingIconEmoji}>{s.icon}</Text>
               </View>

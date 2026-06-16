@@ -1,10 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Amplify } from 'aws-amplify';
 import {
-    confirmSignIn,
-    fetchAuthSession,
-    signIn,
-    signOut,
+  confirmSignIn,
+  fetchAuthSession,
+  signIn,
+  signOut,
 } from 'aws-amplify/auth';
 
 // Configure Amplify with your Cognito details
@@ -26,9 +26,8 @@ const USER_KEY = 'tappin_user';
 // Step 1 — Send OTP to phone number
 export async function requestOTP(phoneNumber) {
   try {
-    // Format phone number to E.164 if not already
     const formatted = phoneNumber.startsWith('+') ? phoneNumber : `+1${phoneNumber.replace(/\D/g, '')}`;
-    
+
     const result = await signIn({
       username: formatted,
       options: {
@@ -38,6 +37,25 @@ export async function requestOTP(phoneNumber) {
 
     return { success: true, result };
   } catch (error) {
+    // If Amplify thinks someone's already signed in but our session is broken,
+    // sign out and retry once.
+    if (error.name === 'UserAlreadyAuthenticatedException' || error.message?.includes('already a signed in user')) {
+      try {
+        await signOut();
+        const formatted = phoneNumber.startsWith('+') ? phoneNumber : `+1${phoneNumber.replace(/\D/g, '')}`;
+        const retryResult = await signIn({
+          username: formatted,
+          options: {
+            authFlowType: 'CUSTOM_WITHOUT_SRP',
+          },
+        });
+        return { success: true, result: retryResult };
+      } catch (retryError) {
+        console.error('requestOTP retry error:', retryError);
+        return { success: false, error: retryError.message };
+      }
+    }
+
     console.error('requestOTP error:', error);
     return { success: false, error: error.message };
   }
@@ -45,10 +63,11 @@ export async function requestOTP(phoneNumber) {
 
 // Step 2 — Verify OTP code
 export async function verifyOTP(otp) {
-  try {
-    const result = await confirmSignIn({ challengeResponse: otp });
-    
-    if (result.isSignedIn) {
+    try {
+      const result = await confirmSignIn({ challengeResponse: otp });
+      console.log('confirmSignIn result:', JSON.stringify(result, null, 2));
+      
+      if (result.isSignedIn) {
       const session = await fetchAuthSession();
       const token = session.tokens?.idToken?.toString();
       
