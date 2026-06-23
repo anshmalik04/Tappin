@@ -1,7 +1,10 @@
 import { Colors } from '@/constants/Colors';
-import { router } from 'expo-router';
-import React from 'react';
+import { getProfile } from '@/services/api';
+import { logout } from '@/services/auth';
+import { router, useFocusEffect } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import {
+  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -63,8 +66,33 @@ const settings: {
   },
 ];
 
+interface ProfileUser {
+  name: string;
+  is_verified: boolean;
+}
+
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const [user, setUser] = useState<ProfileUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadProfile = useCallback(() => {
+    setLoading(true);
+    getProfile()
+      .then((data: any) => setUser(data?.user || null))
+      .catch((e: any) => console.error('Failed to load profile:', e))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Refresh every time this tab comes into focus (e.g. after editing profile)
+  useFocusEffect(
+    useCallback(() => {
+      loadProfile();
+    }, [loadProfile])
+  );
+
+  const displayName = user?.name || 'Your Name';
+  const initial = displayName.charAt(0).toUpperCase();
 
   return (
     <ScrollView
@@ -76,13 +104,19 @@ export default function ProfileScreen() {
 
       {/* User card */}
       <View style={styles.userCard}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>V</Text>
-        </View>
-        <View style={styles.userInfo}>
-          <Text style={styles.userName}>Vamshi P.</Text>
-          <Text style={styles.verified}>✓ Verified</Text>
-        </View>
+        {loading ? (
+          <ActivityIndicator color={Colors.primary} style={{ flex: 1 }} />
+        ) : (
+          <>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{initial}</Text>
+            </View>
+            <View style={styles.userInfo}>
+              <Text style={styles.userName}>{displayName}</Text>
+              {user?.is_verified && <Text style={styles.verified}>✓ Verified</Text>}
+            </View>
+          </>
+        )}
         <TouchableOpacity onPress={() => router.push('/edit-profile' as any)}>
           <Text style={styles.editLink}>Edit Profile →</Text>
         </TouchableOpacity>
@@ -111,6 +145,17 @@ export default function ProfileScreen() {
           </React.Fragment>
         ))}
       </View>
+
+      {/* TEMPORARY: Sign Out button for testing auth flow */}
+      <TouchableOpacity
+        style={styles.signOutBtn}
+        onPress={async () => {
+          await logout();
+          router.replace('/auth' as any);
+        }}
+      >
+        <Text style={styles.signOutBtnText}>Sign Out</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -126,6 +171,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 20,
     gap: 14,
+    minHeight: 88,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
@@ -175,4 +221,12 @@ const styles = StyleSheet.create({
   settingDesc: { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
   chevron: { fontSize: 22, color: Colors.textMuted, fontWeight: '300' },
   divider: { height: 1, backgroundColor: Colors.divider, marginLeft: 70 },
+  signOutBtn: {
+    marginTop: 24,
+    padding: 16,
+    backgroundColor: Colors.danger,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  signOutBtnText: { color: Colors.white, fontWeight: '700', fontSize: 16 },
 });

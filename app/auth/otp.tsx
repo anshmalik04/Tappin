@@ -1,28 +1,46 @@
 import { Colors } from '@/constants/Colors';
-import { verifyOTP } from '@/services/auth';
+import { registerUser } from '@/services/api';
+import { requestOTP, verifyOTP } from '@/services/auth';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 export default function OTPScreen() {
-  const { phone } = useLocalSearchParams<{ phone: string }>();
+  const { phone, isNewUser, name, birthdate } = useLocalSearchParams<{
+    phone: string;
+    isNewUser?: string;
+    name?: string;
+    birthdate?: string;
+  }>();
   const [code, setCode] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [countdown, setCountdown] = useState(30);
   const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    // Trigger the OTP send as soon as this screen mounts
+    const sendOTP = async () => {
+      if (!phone) { setLoading(false); return; }
+      const result = await requestOTP(phone);
+      if (!result.success) {
+        setError(result.error || 'Failed to send code. Go back and try again.');
+      }
+      setLoading(false);
+      inputRef.current?.focus();
+    };
+
+    sendOTP();
+
     const timer = setInterval(() => {
       setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
     }, 1000);
@@ -31,26 +49,48 @@ export default function OTPScreen() {
 
   const handleVerify = async (otp: string) => {
     if (otp.length !== 6) return;
-
     setLoading(true);
     setError('');
 
     const result = await verifyOTP(otp);
 
-    setLoading(false);
-
-    if (result.success) {
-      router.replace('/(tabs)/map');
-    } else {
+    if (!result.success) {
+      setLoading(false);
       setError(result.error || 'Invalid code. Try again.');
       setCode('');
+      return;
     }
+
+    // Now that we're verified and have a real JWT, create the Postgres user row
+    // if this was a new signup.
+    if (isNewUser === 'true' && phone && name && birthdate) {
+      try {
+        await registerUser(phone, name, birthdate);
+      } catch (e: any) {
+        console.error('registerUser error after OTP:', e);
+        // Don't block navigation on this — the user is authenticated either way;
+        // worst case their profile is incomplete and they can fix it in Edit Profile.
+      }
+    }
+
+    setLoading(false);
+    router.replace('/(tabs)/map');
   };
 
   const handleChangeText = (val: string) => {
     const digits = val.replace(/\D/g, '').slice(0, 6);
     setCode(digits);
     if (digits.length === 6) handleVerify(digits);
+  };
+
+  const handleResend = async () => {
+    if (!phone) return;
+    setCountdown(30);
+    setError('');
+    const result = await requestOTP(phone);
+    if (!result.success) {
+      setError(result.error || 'Failed to resend code.');
+    }
   };
 
   const formattedPhone = phone
@@ -63,7 +103,6 @@ export default function OTPScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.inner}>
-        {/* Back button */}
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
@@ -74,52 +113,50 @@ export default function OTPScreen() {
 
         <Text style={styles.title}>Enter your code</Text>
         <Text style={styles.subtitle}>
-          We sent a 6-digit code to {'\n'}
+          We sent a 6-digit code to{'\n'}
           <Text style={styles.phoneHighlight}>+1 {formattedPhone}</Text>
         </Text>
 
-        {/* OTP dots display */}
-        <TouchableOpacity
-          style={styles.dotsRow}
-          onPress={() => inputRef.current?.focus()}
-          activeOpacity={1}
-        >
-          {[0, 1, 2, 3, 4, 5].map((i) => (
-            <View
-              key={i}
-              style={[
-                styles.dot,
-                code.length > i && styles.dotFilled,
-                code.length === i && styles.dotActive,
-              ]}
+        {loading ? (
+          <ActivityIndicator color={Colors.primary} style={{ marginTop: 16 }} />
+        ) : (
+          <>
+            <TouchableOpacity
+              style={styles.dotsRow}
+              onPress={() => inputRef.current?.focus()}
+              activeOpacity={1}
             >
-              <Text style={styles.dotText}>{code[i] || ''}</Text>
-            </View>
-          ))}
-        </TouchableOpacity>
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.dot,
+                    code.length > i && styles.dotFilled,
+                    code.length === i && styles.dotActive,
+                  ]}
+                >
+                  <Text style={styles.dotText}>{code[i] || ''}</Text>
+                </View>
+              ))}
+            </TouchableOpacity>
 
-        {/* Hidden input */}
-        <TextInput
-          ref={inputRef}
-          style={styles.hiddenInput}
-          keyboardType="number-pad"
-          value={code}
-          onChangeText={handleChangeText}
-          maxLength={6}
-        />
+            <TextInput
+              ref={inputRef}
+              style={styles.hiddenInput}
+              keyboardType="number-pad"
+              value={code}
+              onChangeText={handleChangeText}
+              maxLength={6}
+            />
+          </>
+        )}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        {loading && <ActivityIndicator color={Colors.primary} style={{ marginTop: 16 }} />}
-
-        {/* Resend */}
         <TouchableOpacity
           style={styles.resendButton}
           disabled={countdown > 0}
-          onPress={() => {
-            setCountdown(30);
-            router.back();
-          }}
+          onPress={handleResend}
         >
           <Text style={[styles.resendText, countdown > 0 && styles.resendDisabled]}>
             {countdown > 0 ? `Resend code in ${countdown}s` : 'Resend code'}

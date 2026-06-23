@@ -50,6 +50,7 @@ export default function SplashScreen() {
           hasCredentials: !!session.credentials,
           identityId: session.identityId,
         }, null, 2));
+        console.log('[DEBUG] sub:', session.tokens?.idToken?.payload?.sub);
       } catch (e: any) {
         console.log('[DEBUG] fetchAuthSession threw:', e?.name, e?.message);
       }
@@ -60,7 +61,7 @@ export default function SplashScreen() {
         if (loggedIn) {
           router.replace('/(tabs)/map');
         } else {
-          router.replace('/auth/phone' as any);
+          router.replace('/auth' as any);
         }
       }, 2800);
     };

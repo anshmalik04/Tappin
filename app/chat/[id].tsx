@@ -1,19 +1,20 @@
-import React, { useState, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  Modal,
-} from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/Colors';
-import { users, chatThreads } from '@/data/mockData';
+import { getMessages, getProfile, sendMessage as sendMessageApi } from '@/services/api';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const MEETUP_SPOTS = [
   'DJ Set Area',
@@ -26,30 +27,87 @@ const MEETUP_SPOTS = [
   'Patio',
 ];
 
+interface Message {
+  id: string;
+  match_id: string;
+  sender_id: string;
+  content: string;
+  meetup_spot: string | null;
+  created_at: string;
+}
+
 export default function ChatScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, otherUserName, venueName } = useLocalSearchParams<{
+    id: string;
+    otherUserName?: string;
+    venueName?: string;
+  }>();
   const insets = useSafeAreaInsets();
-  const user = users.find((u) => u.id === id) ?? users[0];
-  const thread = chatThreads[id ?? '1'] ?? chatThreads['1'];
 
-  const [messages, setMessages] = useState(thread.messages);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [inputText, setInputText] = useState('');
-  const [meetupSpot, setMeetupSpot] = useState(thread.meetupSpot ?? 'DJ Set Area');
+  const [meetupSpot, setMeetupSpot] = useState<string | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [sending, setSending] = useState(false);
 
-  const sendMessage = () => {
-    if (!inputText.trim()) return;
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `m${Date.now()}`,
-        senderId: 'me',
-        text: inputText.trim(),
-        timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-      },
-    ]);
-    setInputText('');
+  useEffect(() => {
+    if (!id) return;
+    const matchId = Array.isArray(id) ? id[0] : id;
+
+    Promise.all([getMessages(matchId), getProfile()])
+      .then(([messagesData, profileData]: [any, any]) => {
+        const msgs = messagesData?.messages || [];
+        setMessages(msgs);
+        setMyUserId(profileData?.user?.id || null);
+
+        const lastWithSpot = [...msgs].reverse().find((m: Message) => m.meetup_spot);
+        if (lastWithSpot) setMeetupSpot(lastWithSpot.meetup_spot);
+      })
+      .catch((e: any) => console.error('Failed to load chat:', e))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  const formatTime = (iso: string) => {
+    return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   };
+
+  const handleSend = async (spotOverride?: string) => {
+    const text = inputText.trim();
+    if (!text && !spotOverride) return;
+    if (!id) return;
+
+    const matchId = Array.isArray(id) ? id[0] : id;
+
+    setSending(true);
+    try {
+      const result = await sendMessageApi(matchId, text || `📍 Meeting at ${spotOverride}`, spotOverride ?? null);
+      const newMessage = result?.data;
+      if (newMessage) {
+        setMessages((prev) => [...prev, newMessage]);
+      }
+      setInputText('');
+    } catch (e) {
+      console.error('Failed to send message:', e);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const selectMeetupSpot = (spot: string) => {
+    setMeetupSpot(spot);
+    setDropdownOpen(false);
+    handleSend(spot);
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -63,14 +121,16 @@ export default function ChatScreen() {
           <Text style={styles.backBtnText}>←</Text>
         </TouchableOpacity>
         <View style={styles.avatarSmall}>
-          <Text style={styles.avatarSmallText}>{user.initial}</Text>
+          <Text style={styles.avatarSmallText}>{(otherUserName || '?').charAt(0).toUpperCase()}</Text>
         </View>
         <View style={styles.headerInfo}>
-          <Text style={styles.headerName}>{user.name}</Text>
-          <View style={styles.atVenueRow}>
-            <View style={styles.greenDot} />
-            <Text style={styles.atVenue}>At {user.currentVenue ?? 'a venue'}</Text>
-          </View>
+          <Text style={styles.headerName}>{otherUserName || 'Match'}</Text>
+          {venueName && (
+            <View style={styles.atVenueRow}>
+              <View style={styles.greenDot} />
+              <Text style={styles.atVenue}>Matched at {venueName}</Text>
+            </View>
+          )}
         </View>
         <TouchableOpacity style={styles.safetyBtn}>
           <Text style={styles.safetyBtnText}>🛡 Safety</Text>
@@ -95,31 +155,36 @@ export default function ChatScreen() {
                 style={styles.meetupDropdown}
                 onPress={() => setDropdownOpen(true)}
               >
-                <Text style={styles.meetupDropdownText}>{meetupSpot}</Text>
+                <Text style={styles.meetupDropdownText}>{meetupSpot || 'Choose a spot'}</Text>
                 <Text style={styles.dropdownArrow}>▾</Text>
               </TouchableOpacity>
               <Text style={styles.meetupNote}>Shared with your emergency contacts</Text>
             </View>
 
-            {/* Safety banner */}
-            <View style={styles.safetyBanner}>
-              <Text style={styles.safetyBannerTitle}>✓ Emergency contacts notified of meetup</Text>
-              <Text style={styles.safetyBannerSub}>
-                Meeting at {meetupSpot} · {user.currentVenue ?? 'venue'}
-              </Text>
-            </View>
+            {/* Safety banner - only shows once a meetup spot has actually been shared */}
+            {meetupSpot && (
+              <View style={styles.safetyBanner}>
+                <Text style={styles.safetyBannerTitle}>✓ Emergency contacts notified of meetup</Text>
+                <Text style={styles.safetyBannerSub}>
+                  Meeting at {meetupSpot}{venueName ? ` · ${venueName}` : ''}
+                </Text>
+              </View>
+            )}
           </View>
         }
+        ListEmptyComponent={
+          <Text style={styles.emptyText}>Say hi to start the conversation.</Text>
+        }
         renderItem={({ item }) => {
-          const isMe = item.senderId === 'me';
+          const isMe = myUserId !== null && item.sender_id === myUserId;
           return (
             <View style={[styles.messageRow, isMe && styles.messageRowMe]}>
               <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
                 <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
-                  {item.text}
+                  {item.content}
                 </Text>
               </View>
-              <Text style={styles.timestamp}>{item.timestamp}</Text>
+              <Text style={styles.timestamp}>{formatTime(item.created_at)}</Text>
             </View>
           );
         }}
@@ -127,7 +192,7 @@ export default function ChatScreen() {
 
       {/* Input bar */}
       <View style={[styles.inputBar, { paddingBottom: insets.bottom + 8 }]}>
-        <TouchableOpacity style={styles.locationPinBtn}>
+        <TouchableOpacity style={styles.locationPinBtn} onPress={() => setDropdownOpen(true)}>
           <Text style={styles.locationPin}>📍</Text>
         </TouchableOpacity>
         <TextInput
@@ -138,8 +203,8 @@ export default function ChatScreen() {
           onChangeText={setInputText}
           multiline
         />
-        <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
-          <Text style={styles.sendBtnText}>↑</Text>
+        <TouchableOpacity style={styles.sendBtn} onPress={() => handleSend()} disabled={sending}>
+          {sending ? <ActivityIndicator size="small" color={Colors.white} /> : <Text style={styles.sendBtnText}>↑</Text>}
         </TouchableOpacity>
       </View>
 
@@ -161,10 +226,7 @@ export default function ChatScreen() {
               <TouchableOpacity
                 key={spot}
                 style={[styles.dropdownItem, meetupSpot === spot && styles.dropdownItemActive]}
-                onPress={() => {
-                  setMeetupSpot(spot);
-                  setDropdownOpen(false);
-                }}
+                onPress={() => selectMeetupSpot(spot)}
               >
                 <Text
                   style={[styles.dropdownItemText, meetupSpot === spot && styles.dropdownItemTextActive]}
@@ -183,6 +245,7 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
+  centered: { justifyContent: 'center', alignItems: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -260,6 +323,7 @@ const styles = StyleSheet.create({
   },
   safetyBannerTitle: { fontSize: 13, fontWeight: '700', color: Colors.success },
   safetyBannerSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  emptyText: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', paddingVertical: 40 },
   messageRow: { marginBottom: 12, alignItems: 'flex-start' },
   messageRowMe: { alignItems: 'flex-end' },
   bubble: {

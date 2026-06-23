@@ -1,5 +1,4 @@
 import { Colors } from '@/constants/Colors';
-import { chatThreads, users } from '@/data/mockData';
 import { getMatches } from '@/services/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -15,42 +14,39 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-interface MatchUser {
-  id: string;
-  name?: string;
-  initial?: string;
-  photo?: string;
-  venue_id?: string;
-  venue?: string;
+interface Match {
+  match_id: string;
+  venue_id: string;
+  venue_name: string;
+  matched_at: string;
+  other_user_id: string;
+  other_user_name: string;
+  other_user_bio: string;
+  other_user_verified: boolean;
+  other_user_photo: string | null;
+  last_message: string | null;
+  last_message_at: string | null;
 }
-
-// TODO: remove once real matches exist in the backend — placeholder for layout preview
-const MOCK_MATCHES: MatchUser[] = [
-  { id: 'mock-1', name: 'Maya L.', initial: 'M' },
-  { id: 'mock-2', name: 'Chris T.', initial: 'C' },
-  { id: 'mock-3', name: 'Dana W.', initial: 'D' },
-];
 
 export default function ChatListScreen() {
   const insets = useSafeAreaInsets();
-  const [matches, setMatches] = useState<MatchUser[]>([]);
+  const [matches, setMatches] = useState<Match[]>([]);
   const [loadingMatches, setLoadingMatches] = useState(true);
 
   useEffect(() => {
     getMatches()
       .then((data: any) => {
-        const real = data?.matches || [];
-        // TODO: remove MOCK_MATCHES fallback once real matches exist
-        setMatches(real.length > 0 ? real : MOCK_MATCHES);
+        setMatches(data?.matches || []);
       })
       .catch((e: any) => console.error('Failed to load matches:', e))
       .finally(() => setLoadingMatches(false));
   }, []);
 
-  const threads = users.map((u) => ({
-    user: u,
-    lastMessage: chatThreads[u.id]?.messages.slice(-1)[0],
-  }));
+  const formatTime = (iso: string | null) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -69,17 +65,17 @@ export default function ChatListScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }}>
             {matches.map((m) => (
               <TouchableOpacity
-                key={m.id}
+                key={m.match_id}
                 style={styles.matchUser}
-                onPress={() => router.push(`/user/${m.id}${m.venue_id ? `?venueId=${m.venue_id}` : ''}` as any)}
+                onPress={() => router.push(`/user/${m.other_user_id}?venueId=${m.venue_id}` as any)}
               >
                 <LinearGradient colors={['#B5CDEE', '#7FAADF']} style={styles.matchPhoto}>
                   <Text style={styles.matchInitial}>
-                    {(m.initial || m.name || '?').charAt(0).toUpperCase()}
+                    {(m.other_user_name || '?').charAt(0).toUpperCase()}
                   </Text>
                 </LinearGradient>
                 <Text style={styles.matchName} numberOfLines={1}>
-                  {m.name || 'Match'}
+                  {m.other_user_name || 'Match'}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -87,47 +83,49 @@ export default function ChatListScreen() {
         </View>
       ) : null}
 
-      {/* Chat threads */}
-      <FlatList
-        data={threads}
-        keyExtractor={(item) => item.user.id}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 100, paddingHorizontal: 16, paddingTop: 8 }}
-        ItemSeparatorComponent={() => <View style={styles.divider} />}
-        ListHeaderComponent={() => (
-          <Text style={styles.messagesHeading}>MESSAGES</Text>
-        )}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.row}
-            onPress={() => router.push(`/chat/${item.user.id}`)}
-            activeOpacity={0.8}
-          >
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{item.user.initial}</Text>
-            </View>
-            <View style={styles.rowInfo}>
-              <View style={styles.rowTop}>
-                <Text style={styles.userName}>{item.user.name}</Text>
-                {item.lastMessage && (
-                  <Text style={styles.timestamp}>{item.lastMessage.timestamp}</Text>
-                )}
+      {/* Chat threads - now from real matches data */}
+      {!loadingMatches && (
+        <FlatList
+          data={matches}
+          keyExtractor={(item) => item.match_id}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 100, paddingHorizontal: 16, paddingTop: 8 }}
+          ItemSeparatorComponent={() => <View style={styles.divider} />}
+          ListHeaderComponent={() => (
+            <Text style={styles.messagesHeading}>MESSAGES</Text>
+          )}
+          ListEmptyComponent={() => (
+            <Text style={styles.emptyText}>No conversations yet — Tap In with someone to start chatting.</Text>
+          )}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => router.push(`/chat/${item.match_id}`)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{(item.other_user_name || '?').charAt(0).toUpperCase()}</Text>
               </View>
-              {item.user.currentVenue && (
+              <View style={styles.rowInfo}>
+                <View style={styles.rowTop}>
+                  <Text style={styles.userName}>{item.other_user_name}</Text>
+                  {item.last_message_at && (
+                    <Text style={styles.timestamp}>{formatTime(item.last_message_at)}</Text>
+                  )}
+                </View>
                 <View style={styles.atVenueRow}>
                   <View style={styles.greenDot} />
-                  <Text style={styles.atVenue}>At {item.user.currentVenue}</Text>
+                  <Text style={styles.atVenue}>Matched at {item.venue_name}</Text>
                 </View>
-              )}
-              {item.lastMessage && (
-                <Text style={styles.preview} numberOfLines={1}>
-                  {item.lastMessage.senderId === 'me' ? 'You: ' : ''}
-                  {item.lastMessage.text}
-                </Text>
-              )}
-            </View>
-          </TouchableOpacity>
-        )}
-      />
+                {item.last_message && (
+                  <Text style={styles.preview} numberOfLines={1}>
+                    {item.last_message}
+                  </Text>
+                )}
+              </View>
+            </TouchableOpacity>
+          )}
+        />
+      )}
     </View>
   );
 }
@@ -187,5 +185,11 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 12,
     marginTop: 4,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    paddingVertical: 40,
   },
 });
