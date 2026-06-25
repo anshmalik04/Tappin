@@ -1,91 +1,21 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '@/constants/Colors';
-import { createTapIn } from '@/services/api';
 import { users } from '@/data/mockData';
 
 export default function UserProfileScreen() {
-  const { id, venueId, userName, userAge, userBio, userPersonality, userMusic, venueName } =
-    useLocalSearchParams<{
-      id: string;
-      venueId: string;
-      userName: string;
-      userAge: string;
-      userBio: string;
-      userPersonality: string;
-      userMusic: string;
-      venueName: string;
-    }>();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const [tappingIn, setTappingIn] = useState(false);
-
-  // Use nav params if available, otherwise fall back to mock data for now
-  const mockUser = users.find((u) => u.id === id) ?? users[0];
-  const displayName = userName || mockUser.name;
-  const displayAge = userAge || String(mockUser.age);
-  const displayBio = userBio || mockUser.bio;
-
-  // Parse personality and music arrays from params (passed as JSON strings) or use mock
-  let displayPersonality: string[] = mockUser.personality;
-  try {
-    if (userPersonality) displayPersonality = JSON.parse(userPersonality);
-  } catch {}
-
-  let displayMusic: string[] = mockUser.musicTaste;
-  try {
-    if (userMusic) displayMusic = JSON.parse(userMusic);
-  } catch {}
-
-  const handleTapIn = async () => {
-    if (!venueId) {
-      Alert.alert('Error', 'No venue context — go back and try again.');
-      return;
-    }
-    setTappingIn(true);
-    try {
-      const result = await createTapIn(id, venueId);
-
-      // If it's a mutual match, go to match confirmation
-      if (result.match) {
-        router.replace({
-          pathname: '/match-confirmation',
-          params: {
-            matchId: result.match.match_id || result.match.id,
-            otherUserName: displayName,
-            venueName: venueName || '',
-          },
-        } as any);
-      } else {
-        Alert.alert('Tapped In! 👋', `You tapped in on ${displayName}. If they tap back, you'll match!`);
-        router.back();
-      }
-    } catch (err: any) {
-      const msg = err?.message || 'Something went wrong';
-      Alert.alert('Tap In Failed', msg);
-    } finally {
-      setTappingIn(false);
-    }
-  };
-
-  const handlePass = () => {
-    router.back();
-  };
-
-  const handleSave = () => {
-    // No save endpoint in MVP — placeholder for now
-    Alert.alert('Saved ⭐', `${displayName} saved for later.`);
-  };
+  const user = users.find((u) => u.id === id) ?? users[0];
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -110,9 +40,7 @@ export default function UserProfileScreen() {
             colors={['#B5CDEE', '#7FAADF']}
             style={styles.photo}
           >
-            <Text style={styles.photoInitial}>
-              {displayName.charAt(0).toUpperCase()}
-            </Text>
+            <Text style={styles.photoInitial}>{user.initial}</Text>
           </LinearGradient>
           <View style={styles.verifiedBadge}>
             <Text style={styles.verifiedText}>✓ VERIFIED</Text>
@@ -122,44 +50,40 @@ export default function UserProfileScreen() {
         {/* Name and age */}
         <View style={styles.nameSection}>
           <Text style={styles.name}>
-            {displayName}, <Text style={styles.age}>{displayAge}</Text>
+            {user.name}, <Text style={styles.age}>{user.age}</Text>
           </Text>
-          <Text style={styles.bio}>{displayBio}</Text>
+          <Text style={styles.bio}>{user.bio}</Text>
         </View>
 
         {/* Personality */}
-        {displayPersonality.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>PERSONALITY</Text>
-            <View style={styles.tagRow}>
-              {displayPersonality.map((trait) => (
-                <View key={trait} style={styles.personalityTag}>
-                  <Text style={styles.personalityTagText}>{trait}</Text>
-                </View>
-              ))}
-            </View>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>PERSONALITY</Text>
+          <View style={styles.tagRow}>
+            {user.personality.map((trait) => (
+              <View key={trait} style={styles.personalityTag}>
+                <Text style={styles.personalityTagText}>{trait}</Text>
+              </View>
+            ))}
           </View>
-        )}
+        </View>
 
         {/* Music taste */}
-        {displayMusic.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>MUSIC TASTE</Text>
-            <View style={styles.tagRow}>
-              {displayMusic.map((genre) => (
-                <View key={genre} style={styles.musicTag}>
-                  <Text style={styles.musicTagText}>{genre}</Text>
-                </View>
-              ))}
-            </View>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>MUSIC TASTE</Text>
+          <View style={styles.tagRow}>
+            {user.musicTaste.map((genre) => (
+              <View key={genre} style={styles.musicTag}>
+                <Text style={styles.musicTagText}>{genre}</Text>
+              </View>
+            ))}
           </View>
-        )}
+        </View>
       </ScrollView>
 
       {/* Action buttons */}
       <View style={[styles.actionRow, { paddingBottom: insets.bottom + 100 }]}>
         <View style={styles.actionItem}>
-          <TouchableOpacity style={styles.actionBtnSecondary} onPress={handlePass}>
+          <TouchableOpacity style={styles.actionBtnSecondary}>
             <Text style={styles.actionBtnSecondaryText}>✕</Text>
           </TouchableOpacity>
           <Text style={styles.actionLabel}>Pass</Text>
@@ -168,18 +92,10 @@ export default function UserProfileScreen() {
         <View style={styles.actionItem}>
           <LinearGradient
             colors={[Colors.primaryGradientStart, Colors.primaryGradientEnd]}
-            style={[styles.actionBtnPrimary, tappingIn && { opacity: 0.6 }]}
+            style={styles.actionBtnPrimary}
           >
-            <TouchableOpacity
-              style={styles.actionBtnPrimaryInner}
-              onPress={handleTapIn}
-              disabled={tappingIn}
-            >
-              {tappingIn ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={styles.actionBtnPrimaryText}>👋</Text>
-              )}
+            <TouchableOpacity style={styles.actionBtnPrimaryInner}>
+              <Text style={styles.actionBtnPrimaryText}>👋</Text>
             </TouchableOpacity>
           </LinearGradient>
           <Text style={[styles.actionLabel, { color: Colors.primary, fontWeight: '700' }]}>
@@ -188,7 +104,7 @@ export default function UserProfileScreen() {
         </View>
 
         <View style={styles.actionItem}>
-          <TouchableOpacity style={styles.actionBtnSecondary} onPress={handleSave}>
+          <TouchableOpacity style={styles.actionBtnSecondary}>
             <Text style={styles.actionBtnSecondaryText}>⭐</Text>
           </TouchableOpacity>
           <Text style={[styles.actionLabel, { color: Colors.warning }]}>Save</Text>
