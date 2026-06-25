@@ -1,10 +1,13 @@
 import { Colors } from '@/constants/Colors';
-import { getProfile, updateProfile } from '@/services/api';
+import { getProfile, updateProfile, uploadPhoto } from '@/services/api';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
+    Image,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -37,6 +40,7 @@ export default function EditProfileScreen() {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
@@ -45,19 +49,25 @@ export default function EditProfileScreen() {
   const [musicTags, setMusicTags] = useState<string[]>([]);
   const [photos, setPhotos] = useState<Photo[]>([]);
 
+  const loadProfile = async () => {
+    try {
+      const data: any = await getProfile();
+      const u = data?.user || {};
+      setName(u.name || '');
+      setAge(u.age ? String(u.age) : '');
+      setBio(u.bio || '');
+      setVibeTags(parseTagField(u.personality_tags));
+      setMusicTags(parseTagField(u.music_taste));
+      setPhotos(data?.photos || []);
+    } catch (e: any) {
+      console.error('Failed to load profile:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    getProfile()
-      .then((data: any) => {
-        const u = data?.user || {};
-        setName(u.name || '');
-        setAge(u.age ? String(u.age) : '');
-        setBio(u.bio || '');
-        setVibeTags(parseTagField(u.personality_tags));
-        setMusicTags(parseTagField(u.music_taste));
-        setPhotos(data?.photos || []);
-      })
-      .catch((e: any) => console.error('Failed to load profile:', e))
-      .finally(() => setLoading(false));
+    loadProfile();
   }, []);
 
   const parseTagField = (field: any): string[] => {
@@ -78,6 +88,53 @@ export default function EditProfileScreen() {
       setList(list.filter((t) => t !== tag));
     } else {
       setList([...list, tag]);
+    }
+  };
+
+  const handleAddPhoto = async () => {
+    // Request permission
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Needed', 'Please allow photo access in Settings to upload photos.');
+      return;
+    }
+
+    // Launch picker
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (result.canceled) return;
+
+    const pickedImage = result.assets[0];
+    setUploading(true);
+
+    try {
+      // Step 1: Get presigned upload URL from API
+      const orderIndex = photos.length;
+      const isPrimary = photos.length === 0; // First photo is primary
+      const { upload_url, photo_id } = await uploadPhoto(orderIndex, isPrimary, 'image/jpeg');
+
+      // Step 2: Upload the image to S3
+      const imageResponse = await fetch(pickedImage.uri);
+      const blob = await imageResponse.blob();
+      await fetch(upload_url, {
+        method: 'PUT',
+        body: blob,
+        headers: { 'Content-Type': 'image/jpeg' },
+      });
+
+      // Step 3: Reload profile to get updated photo list
+      await loadProfile();
+      Alert.alert('Photo Uploaded! 📸');
+    } catch (e: any) {
+      console.error('Photo upload failed:', e);
+      Alert.alert('Upload Failed', e?.message || 'Something went wrong uploading your photo.');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -132,13 +189,17 @@ export default function EditProfileScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 60 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Photos section — above Bio, per design */}
+        {/* Photos section */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>PHOTOS</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoRow}>
             {photos.map((p) => (
               <View key={p.id} style={styles.photoTile}>
-                <LinearGradient colors={['#B5CDEE', '#7FAADF']} style={StyleSheet.absoluteFill} />
+                {p.photo_url ? (
+                  <Image source={{ uri: p.photo_url }} style={StyleSheet.absoluteFill} />
+                ) : (
+                  <LinearGradient colors={['#B5CDEE', '#7FAADF']} style={StyleSheet.absoluteFill} />
+                )}
                 {p.is_primary && (
                   <View style={styles.primaryBadge}>
                     <Text style={styles.primaryBadgeText}>Primary</Text>
@@ -148,13 +209,14 @@ export default function EditProfileScreen() {
             ))}
             <TouchableOpacity
               style={styles.addPhotoTile}
-              onPress={() => {
-                // Photo picker integration is a separate task — expo-image-picker
-                // needs to be installed first (npx expo install expo-image-picker)
-                console.log('Add photo tapped — picker not yet wired up');
-              }}
+              onPress={handleAddPhoto}
+              disabled={uploading}
             >
-              <Text style={styles.addPhotoPlus}>+</Text>
+              {uploading ? (
+                <ActivityIndicator size="small" color={Colors.primary} />
+              ) : (
+                <Text style={styles.addPhotoPlus}>+</Text>
+              )}
             </TouchableOpacity>
           </ScrollView>
         </View>
