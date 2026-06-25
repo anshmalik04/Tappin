@@ -13,86 +13,129 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const settings: {
-  icon: string;
-  label: string;
-  description: string;
-  iconBg: string;
-  iconColor: string;
-  route?: string;
-}[] = [
-  {
-    icon: '📸',
-    label: 'Photos',
-    description: '4 photos uploaded',
-    iconBg: Colors.primaryLight,
-    iconColor: Colors.primary,
-  },
-  {
-    icon: '🎵',
-    label: 'Music Taste',
-    description: 'Hip Hop, R&B, Indie',
-    iconBg: Colors.primaryLight,
-    iconColor: Colors.primary,
-  },
-  {
-    icon: '✦',
-    label: 'Personality',
-    description: '5 traits selected',
-    iconBg: '#FFF9E6',
-    iconColor: Colors.warning,
-  },
-  {
-    icon: '🛡',
-    label: 'Emergency Contacts',
-    description: '2 contacts set up',
-    iconBg: Colors.dangerLight,
-    iconColor: Colors.danger,
-    route: '/emergency-contacts',
-  },
-  {
-    icon: '👁',
-    label: 'Visibility',
-    description: 'Visible when app is open',
-    iconBg: Colors.successLight,
-    iconColor: Colors.success,
-  },
-  {
-    icon: '🔔',
-    label: 'Notifications',
-    description: 'Hotspot alerts on',
-    iconBg: Colors.mildLight,
-    iconColor: Colors.mild,
-  },
-];
-
-interface ProfileUser {
-  name: string;
-  is_verified: boolean;
+interface ProfileData {
+  user: {
+    name: string;
+    is_verified: boolean;
+    personality_tags: any;
+    music_taste: any;
+  } | null;
+  photos: any[];
+  emergency_contacts: any[];
 }
+
+const parseTagField = (field: any): string[] => {
+  if (Array.isArray(field)) return field;
+  if (typeof field === 'string') {
+    try {
+      const parsed = JSON.parse(field);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const [user, setUser] = useState<ProfileUser | null>(null);
+  const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadProfile = useCallback(() => {
     setLoading(true);
     getProfile()
-      .then((data: any) => setUser(data?.user || null))
+      .then((data: any) => {
+        setProfileData({
+          user: data?.user || null,
+          photos: data?.photos || [],
+          emergency_contacts: data?.emergency_contacts || [],
+        });
+      })
       .catch((e: any) => console.error('Failed to load profile:', e))
       .finally(() => setLoading(false));
   }, []);
 
-  // Refresh every time this tab comes into focus (e.g. after editing profile)
   useFocusEffect(
     useCallback(() => {
       loadProfile();
     }, [loadProfile])
   );
 
+  const user = profileData?.user;
+  const photos = profileData?.photos || [];
+  const emergencyContacts = profileData?.emergency_contacts || [];
+  const vibes = parseTagField(user?.personality_tags);
+  const music = parseTagField(user?.music_taste);
+
   const displayName = user?.name || 'Your Name';
   const initial = displayName.charAt(0).toUpperCase();
+
+  // Build descriptions from real data
+  const photoDesc = photos.length > 0
+    ? `${photos.length} photo${photos.length === 1 ? '' : 's'} uploaded`
+    : 'No photos yet';
+
+  const musicDesc = music.length > 0
+    ? music.slice(0, 3).join(', ') + (music.length > 3 ? ` +${music.length - 3}` : '')
+    : 'No music taste set';
+
+  const vibeDesc = vibes.length > 0
+    ? `${vibes.length} trait${vibes.length === 1 ? '' : 's'} selected`
+    : 'No traits selected';
+
+  const contactDesc = emergencyContacts.length > 0
+    ? `${emergencyContacts.length} contact${emergencyContacts.length === 1 ? '' : 's'} set up`
+    : 'No contacts set up';
+
+  const settings = [
+    {
+      icon: '📸',
+      label: 'Photos',
+      description: photoDesc,
+      iconBg: Colors.primaryLight,
+      iconColor: Colors.primary,
+      route: '/edit-profile',
+    },
+    {
+      icon: '🎵',
+      label: 'Music Taste',
+      description: musicDesc,
+      iconBg: Colors.primaryLight,
+      iconColor: Colors.primary,
+      route: '/edit-profile',
+    },
+    {
+      icon: '✦',
+      label: 'Personality',
+      description: vibeDesc,
+      iconBg: '#FFF9E6',
+      iconColor: Colors.warning,
+      route: '/edit-profile',
+    },
+    {
+      icon: '🛡',
+      label: 'Emergency Contacts',
+      description: contactDesc,
+      iconBg: Colors.dangerLight,
+      iconColor: Colors.danger,
+      route: '/emergency-contacts',
+    },
+    {
+      icon: '👁',
+      label: 'Visibility',
+      description: 'Visible when app is open',
+      iconBg: Colors.successLight,
+      iconColor: Colors.success,
+    },
+    {
+      icon: '🔔',
+      label: 'Notifications',
+      description: 'Hotspot alerts on',
+      iconBg: Colors.mildLight,
+      iconColor: Colors.mild,
+    },
+  ];
 
   return (
     <ScrollView
