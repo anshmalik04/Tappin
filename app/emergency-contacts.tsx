@@ -1,18 +1,20 @@
 import { Colors } from '@/constants/Colors';
 import { createEmergencyContact, deleteEmergencyContact, getEmergencyContacts } from '@/services/api';
+import * as Contacts from 'expo-contacts/legacy';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -20,6 +22,7 @@ interface EmergencyContact {
   id: string;
   name: string;
   phone: string;
+  phone_number?: string;
 }
 
 const formatPhone = (text: string) => {
@@ -40,22 +43,74 @@ export default function EmergencyContactsScreen() {
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [saving, setSaving] = useState(false);
+  const [editingContact, setEditingContact] = useState<EmergencyContact | null>(null);
 
   useEffect(() => {
     getEmergencyContacts()
-      .then((data: EmergencyContact[]) => setContacts(data || []))
+      .then((data: any) => setContacts(data?.contacts || []))
       .catch((e: any) => console.error('Failed to load contacts:', e))
       .finally(() => setLoading(false));
   }, []);
 
-  const addContact = async () => {
+  const openEditModal = (contact: EmergencyContact) => {
+    setEditingContact(contact);
+    setNewName(contact.name);
+    setNewPhone(contact.phone || contact.phone_number || '');
+    setShowModal(true);
+  };
+
+  const handleAddContact = async () => {
+    setEditingContact(null);
+    setNewName('');
+    setNewPhone('');
+
+    const { status } = await Contacts.requestPermissionsAsync();
+
+    if (status === 'granted') {
+      const { data } = await Contacts.getContactsAsync({
+        fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers],
+      });
+
+      const contactsWithPhone = data
+        .filter((c) => c.phoneNumbers && c.phoneNumbers.length > 0 && c.name)
+        .slice(0, 50)
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+      if (contactsWithPhone.length > 0) {
+        const buttons = contactsWithPhone.map((c) => ({
+          text: `${c.name} — ${c.phoneNumbers![0].number}`,
+          onPress: () => {
+            setNewName(c.name || '');
+            setNewPhone(formatPhone(c.phoneNumbers![0].number || ''));
+            setShowModal(true);
+          },
+        }));
+        buttons.push({ text: 'Add manually instead', onPress: () => setShowModal(true) });
+        buttons.push({ text: 'Cancel', onPress: () => {} });
+        Alert.alert('Choose a contact', '', buttons);
+        return;
+      }
+    }
+
+    // Permission denied or no contacts — go straight to manual entry
+    setShowModal(true);
+  };
+
+  const saveContact = async () => {
     if (!newName.trim() || !newPhone.trim()) return;
     setSaving(true);
     try {
-      const saved = await createEmergencyContact(newName.trim(), newPhone.trim());
+      if (editingContact) {
+        await deleteEmergencyContact(editingContact.id);
+        setContacts((prev) => prev.filter((c) => c.id !== editingContact.id));
+      }
+
+      const result = await createEmergencyContact(newName.trim(), newPhone.trim());
+      const saved = result?.contact || result;
       setContacts((prev) => [...prev, saved]);
       setNewName('');
       setNewPhone('');
+      setEditingContact(null);
       setShowModal(false);
     } catch (e) {
       console.error('Failed to save contact:', e);
@@ -65,12 +120,21 @@ export default function EmergencyContactsScreen() {
   };
 
   const removeContact = async (id: string) => {
-    try {
-      await deleteEmergencyContact(id);
-      setContacts((prev) => prev.filter((c) => c.id !== id));
-    } catch (e) {
-      console.error('Failed to remove contact:', e);
-    }
+    Alert.alert('Remove Contact', 'Are you sure you want to remove this contact?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteEmergencyContact(id);
+            setContacts((prev) => prev.filter((c) => c.id !== id));
+          } catch (e) {
+            console.error('Failed to remove contact:', e);
+          }
+        },
+      },
+    ]);
   };
 
   if (loading) {
@@ -99,22 +163,41 @@ export default function EmergencyContactsScreen() {
         </View>
 
         {contacts.map((contact) => (
-          <View key={contact.id} style={styles.contactRow}>
+          <TouchableOpacity
+            key={contact.id}
+            style={styles.contactRow}
+            onPress={() => openEditModal(contact)}
+            activeOpacity={0.7}
+          >
             <View style={styles.contactAvatar}>
               <Text style={styles.contactAvatarText}>{contact.name.charAt(0).toUpperCase()}</Text>
             </View>
             <View style={styles.contactInfo}>
               <Text style={styles.contactName}>{contact.name}</Text>
-              <Text style={styles.contactPhone}>{contact.phone}</Text>
+              <Text style={styles.contactPhone}>{contact.phone || contact.phone_number}</Text>
             </View>
-            <TouchableOpacity style={styles.removeBtn} onPress={() => removeContact(contact.id)}>
-              <Text style={styles.removeBtnText}>Remove</Text>
-            </TouchableOpacity>
-          </View>
+            <View style={styles.contactActions}>
+              <TouchableOpacity
+                style={styles.editBtn}
+                onPress={() => openEditModal(contact)}
+              >
+                <Text style={styles.editBtnText}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.removeBtn}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  removeContact(contact.id);
+                }}
+              >
+                <Text style={styles.removeBtnText}>Remove</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
         ))}
 
         {contacts.length < 3 && (
-          <TouchableOpacity style={styles.addBtn} onPress={() => setShowModal(true)}>
+          <TouchableOpacity style={styles.addBtn} onPress={handleAddContact}>
             <Text style={styles.addBtnText}>+ Add contact</Text>
           </TouchableOpacity>
         )}
@@ -130,7 +213,9 @@ export default function EmergencyContactsScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={styles.modalSheet}>
-            <Text style={styles.modalTitle}>Add emergency contact</Text>
+            <Text style={styles.modalTitle}>
+              {editingContact ? 'Edit contact' : 'Add emergency contact'}
+            </Text>
 
             <Text style={styles.inputLabel}>Name</Text>
             <TextInput
@@ -151,15 +236,23 @@ export default function EmergencyContactsScreen() {
               keyboardType="phone-pad"
             />
 
-            <TouchableOpacity style={styles.saveBtn} onPress={addContact} disabled={saving}>
+            <TouchableOpacity style={styles.saveBtn} onPress={saveContact} disabled={saving}>
               {saving ? (
                 <ActivityIndicator color={Colors.white} />
               ) : (
-                <Text style={styles.saveBtnText}>Save contact</Text>
+                <Text style={styles.saveBtnText}>
+                  {editingContact ? 'Save changes' : 'Save contact'}
+                </Text>
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowModal(false)}>
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => {
+                setShowModal(false);
+                setEditingContact(null);
+              }}
+            >
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -211,7 +304,10 @@ const styles = StyleSheet.create({
   contactInfo: { flex: 1 },
   contactName: { fontSize: 16, fontWeight: '600', color: Colors.textPrimary },
   contactPhone: { fontSize: 13, color: Colors.textMuted, marginTop: 2 },
-  removeBtn: { paddingHorizontal: 12, paddingVertical: 6 },
+  contactActions: { flexDirection: 'row', gap: 8 },
+  editBtn: { paddingHorizontal: 10, paddingVertical: 6 },
+  editBtnText: { color: Colors.primary, fontSize: 14, fontWeight: '600' },
+  removeBtn: { paddingHorizontal: 10, paddingVertical: 6 },
   removeBtnText: { color: Colors.danger, fontSize: 14, fontWeight: '600' },
   addBtn: {
     marginTop: 20,

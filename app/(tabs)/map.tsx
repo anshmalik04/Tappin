@@ -1,9 +1,11 @@
 import HeatDot from '@/components/HeatDot';
 import { Colors } from '@/constants/Colors';
 import type { HeatLevel } from '@/data/mockData';
-import { venues } from '@/data/mockData';
+import { venues as mockVenues } from '@/data/mockData';
+import { connectWebSocket, disconnectWebSocket, getHeatmapData } from '@/services/api';
+import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -12,7 +14,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,6 +22,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const { width, height } = Dimensions.get('window');
 const PHILLY_CENTER = { latitude: 39.9526, longitude: -75.1652 };
 const FILTERS = ['All', 'Bars', 'Clubs', 'Events', 'Food'];
+const REFRESH_INTERVAL_MS = 30000;
+
+interface LiveVenue {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  heatmap_score: number;
+  heatmap_color: string;
+  going_count: number;
+  arrived_count: number;
+  cover_charge: string | null;
+  vibe_tags: string[] | null;
+  closing_time: string | null;
+}
 
 const heatColor: Record<HeatLevel, string> = {
   hot: Colors.hot,
@@ -34,6 +51,14 @@ const heatLabel: Record<HeatLevel, string> = {
   mild: 'Mild',
   quiet: 'Quiet',
 };
+
+function toHeatLevel(color: string): HeatLevel {
+  const c = (color || '').toLowerCase();
+  if (c === 'hot' || c === 'red') return 'hot';
+  if (c === 'warm' || c === 'orange') return 'warm';
+  if (c === 'mild' || c === 'yellow') return 'mild';
+  return 'quiet';
+}
 
 function PulsingMarker({ level }: { level: HeatLevel }) {
   const scale = useRef(new Animated.Value(1)).current;
@@ -92,8 +117,101 @@ function PulsingMarker({ level }: { level: HeatLevel }) {
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState('All');
-  const [selectedVenue, setSelectedVenue] = useState<typeof venues[0] | null>(null);
+  const [selectedVenue, setSelectedVenue] = useState<any | null>(null);
+  const [liveVenues, setLiveVenues] = useState<LiveVenue[]>([]);
+  const [usingMockData, setUsingMockData] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const slideUp = useRef(new Animated.Value(0)).current;
+  const refreshTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchHeatmap = useCallback(async (lat?: number, lng?: number) => {
+    try {
+      const centerLat = lat ?? userLocation?.latitude ?? PHILLY_CENTER.latitude;
+      const centerLng = lng ?? userLocation?.longitude ?? PHILLY_CENTER.longitude;
+      const data = await getHeatmapData(centerLat, centerLng, 5000);
+      const venues = data?.venues || [];
+      if (venues.length > 0) {
+        setLiveVenues(venues);
+        setUsingMockData(false);
+      } else {
+        setUsingMockData(true);
+      }
+    } catch (e) {
+      console.error('Failed to load heatmap:', e);
+      setUsingMockData(true);
+    }
+  }, [userLocation]);
+
+  // Get user location on mount
+  useEffect(() => {
+    Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+      .then((loc) => {
+        const { latitude, longitude } = loc.coords;
+        setUserLocation({ latitude, longitude });
+        fetchHeatmap(latitude, longitude);
+      })
+      .catch(() => fetchHeatmap());
+  }, []);
+
+  // 30-second polling refresh
+  useEffect(() => {
+    refreshTimer.current = setInterval(() => fetchHeatmap(), REFRESH_INTERVAL_MS);
+    return () => {
+      if (refreshTimer.current) clearInterval(refreshTimer.current);
+    };
+  }, [fetchHeatmap]);
+
+  // WebSocket real-time updates
+  useEffect(() => {
+    connectWebSocket(
+      (_heatmapPayload) => {
+        console.log('WebSocket heatmap update received');
+        fetchHeatmap();
+      },
+      () => {}
+    );
+    return () => disconnectWebSocket();
+  }, [fetchHeatmap]);
+
+  const markers = usingMockData
+    ? mockVenues.map((v) => ({
+        id: v.id,
+        name: v.name,
+        latitude: v.latitude,
+        longitude: v.longitude,
+        heatLevel: v.heatLevel,
+        isMock: true,
+        cover: v.cover,
+        type: v.type,
+        distance: v.distance,
+        hours: v.hours,
+        tags: v.tags,
+      }))
+    : liveVenues.map((v) => ({
+        id: v.id,
+        name: v.name,
+        latitude: v.lat,
+        longitude: v.lng,
+        heatLevel: toHeatLevel(v.heatmap_color),
+        isMock: false,
+        cover: v.cover_charge || 'Free',
+        type: 'Venue',
+        distance: '',
+        hours: v.closing_time ? `Open until ${v.closing_time}` : '',
+        tags: v.vibe_tags || [],
+      }));
+
+  const handleMarkerPress = (marker: typeof markers[0]) => {
+    setSelectedVenue(marker);
+    slideUp.setValue(0);
+    Animated.spring(slideUp, { toValue: 1, friction: 8, useNativeDriver: true }).start();
+  };
+
+  const handleDismissCard = () => {
+    Animated.spring(slideUp, { toValue: 0, friction: 8, useNativeDriver: true }).start(() => {
+      setSelectedVenue(null);
+    });
+  };
 
   return (
     <View style={styles.container}>
@@ -101,8 +219,8 @@ export default function MapScreen() {
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
         provider={PROVIDER_DEFAULT}
         initialRegion={{
-          latitude: PHILLY_CENTER.latitude,
-          longitude: PHILLY_CENTER.longitude,
+          latitude: userLocation?.latitude ?? PHILLY_CENTER.latitude,
+          longitude: userLocation?.longitude ?? PHILLY_CENTER.longitude,
           latitudeDelta: 0.03,
           longitudeDelta: 0.03,
         }}
@@ -110,15 +228,11 @@ export default function MapScreen() {
         showsMyLocationButton={false}
         userInterfaceStyle="light"
       >
-        {venues.map((v) => (
+        {markers.map((v) => (
           <Marker
             key={v.id}
             coordinate={{ latitude: v.latitude, longitude: v.longitude }}
-            onPress={() => {
-              setSelectedVenue(v);
-              slideUp.setValue(0);
-              Animated.spring(slideUp, { toValue: 1, friction: 8, useNativeDriver: true }).start();
-            }}
+            onPress={() => handleMarkerPress(v)}
             anchor={{ x: 0.5, y: 0.5 }}
           >
             <PulsingMarker level={v.heatLevel} />
@@ -126,9 +240,8 @@ export default function MapScreen() {
         ))}
       </MapView>
 
-      {/* Overlay UI */}
+      {/* Top overlay */}
       <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}>
-        {/* Heat legend */}
         <View style={styles.legendRow}>
           {(['hot', 'warm', 'mild', 'quiet'] as HeatLevel[]).map((lvl) => (
             <View key={lvl} style={styles.legendItem}>
@@ -136,9 +249,13 @@ export default function MapScreen() {
               <Text style={styles.legendText}>{heatLabel[lvl]}</Text>
             </View>
           ))}
+          {usingMockData && (
+            <View style={styles.mockBadge}>
+              <Text style={styles.mockBadgeText}>PREVIEW</Text>
+            </View>
+          )}
         </View>
 
-        {/* Search bar */}
         <View style={styles.searchContainer}>
           <TextInput
             style={styles.searchInput}
@@ -150,7 +267,6 @@ export default function MapScreen() {
           </View>
         </View>
 
-        {/* Filter chips */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -170,10 +286,7 @@ export default function MapScreen() {
         </ScrollView>
       </View>
 
-      {/* User location dot overlay hint */}
-      <View style={styles.userDotGlow} pointerEvents="none" />
-
-      {/* Bottom card - only shows when a venue marker is tapped */}
+      {/* Bottom venue card */}
       {selectedVenue && (
         <Animated.View
           style={[
@@ -189,14 +302,7 @@ export default function MapScreen() {
           ]}
         >
           <View style={styles.cardHandle} />
-          <TouchableOpacity
-            style={styles.closeBtn}
-            onPress={() => {
-              Animated.spring(slideUp, { toValue: 0, friction: 8, useNativeDriver: true }).start(() => {
-                setSelectedVenue(null);
-              });
-            }}
-          >
+          <TouchableOpacity style={styles.closeBtn} onPress={handleDismissCard}>
             <Text style={styles.closeBtnText}>✕</Text>
           </TouchableOpacity>
           <View style={styles.cardRow}>
@@ -204,7 +310,9 @@ export default function MapScreen() {
             <View style={styles.cardInfo}>
               <Text style={styles.cardName}>{selectedVenue.name}</Text>
               <Text style={styles.cardMeta}>
-                {selectedVenue.type} · {selectedVenue.distance} · {selectedVenue.hours}
+                {[selectedVenue.type, selectedVenue.distance, selectedVenue.hours]
+                  .filter(Boolean)
+                  .join(' · ')}
               </Text>
             </View>
             <TouchableOpacity
@@ -221,13 +329,15 @@ export default function MapScreen() {
             </View>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
-            {selectedVenue.tags.map((tag, i) => (
-              <View key={i} style={styles.tag}>
-                <Text style={styles.tagText}>{tag}</Text>
-              </View>
-            ))}
-          </ScrollView>
+          {selectedVenue.tags?.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+              {selectedVenue.tags.map((tag: string, i: number) => (
+                <View key={i} style={styles.tag}>
+                  <Text style={styles.tagText}>{tag}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          )}
         </Animated.View>
       )}
     </View>
@@ -252,6 +362,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     alignSelf: 'center',
     gap: 16,
+    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -261,6 +372,14 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
   legendText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
+  mockBadge: {
+    backgroundColor: Colors.warning,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 4,
+  },
+  mockBadgeText: { fontSize: 9, fontWeight: '800', color: Colors.white, letterSpacing: 0.5 },
   searchContainer: {
     flexDirection: 'row',
     backgroundColor: Colors.white,
@@ -294,19 +413,6 @@ const styles = StyleSheet.create({
   filterChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   filterChipText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
   filterChipTextActive: { color: Colors.white },
-  userDotGlow: {
-    position: 'absolute',
-    bottom: '40%',
-    alignSelf: 'center',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'transparent',
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 12,
-  },
   bottomCard: {
     position: 'absolute',
     bottom: 0,

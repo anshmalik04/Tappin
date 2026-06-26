@@ -8,6 +8,7 @@
     "aws-amplify": "^6.18.0",
     "expo": "~56.0.3",
     "expo-constants": "~56.0.14",
+    "expo-contacts": "~56.0.9",
     "expo-font": "~56.0.5",
     "expo-linear-gradient": "~56.0.4",
     "expo-linking": "~56.0.11",

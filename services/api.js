@@ -1,6 +1,5 @@
 // @ts-nocheck
 import { API_BASE_URL } from '@/constants/config';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchAuthSession } from 'aws-amplify/auth';
 
 const WS_URL = 'wss://lfcdr0kcn9.execute-api.us-east-1.amazonaws.com/production';
@@ -61,7 +60,7 @@ export function connectWebSocket(onHeatmapUpdate, onChatMessage) {
   const connect = async () => {
     let token;
     try { const s = await fetchAuthSession(); token = s.tokens?.idToken?.toString(); } catch { token = null; }
-    ws = new WebSocket(`${WS_URL}?token=${token}`);
+    ws = new WebSocket(WS_URL);
     ws.onopen = () => { if (reconnectTimer) clearTimeout(reconnectTimer); };
     ws.onmessage = (e) => {
       try {
@@ -71,7 +70,7 @@ export function connectWebSocket(onHeatmapUpdate, onChatMessage) {
       } catch(err) { console.error('WS parse error:', err); }
     };
     ws.onerror = (err) => console.error('WebSocket error:', err);
-    ws.onclose = () => { reconnectTimer = setTimeout(connect, 5000); };
+    ws.onclose = () => { reconnectTimer = setTimeout(connect, 60000); };
   };
   connect();
 }
