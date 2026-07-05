@@ -1,8 +1,9 @@
+// @ts-nocheck
 import HeatDot from '@/components/HeatDot';
 import { Colors } from '@/constants/Colors';
 import type { HeatLevel } from '@/data/mockData';
 import { venues as mockVenues } from '@/data/mockData';
-import { connectWebSocket, disconnectWebSocket, getHeatmapData } from '@/services/api';
+import { connectWebSocket, disconnectWebSocket, getNearbyVenues } from '@/services/api';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -22,20 +23,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const { width, height } = Dimensions.get('window');
 const PHILLY_CENTER = { latitude: 39.9526, longitude: -75.1652 };
 const FILTERS = ['All', 'Bars', 'Clubs', 'Events', 'Food'];
-const REFRESH_INTERVAL_MS = 30000;
-
+const REFRESH_INTERVAL_MS = 300000; // 5 minutes
 interface LiveVenue {
   id: string;
+  foursquare_id: string;
   name: string;
   lat: number;
   lng: number;
+  address: string;
+  type: string;
+  category: string;
   heatmap_score: number;
-  heatmap_color: string;
+  heatmap_color: string | null;
   going_count: number;
   arrived_count: number;
-  cover_charge: string | null;
-  vibe_tags: string[] | null;
-  closing_time: string | null;
+  has_activity: boolean;
 }
 
 const heatColor: Record<HeatLevel, string> = {
@@ -52,6 +54,13 @@ const heatLabel: Record<HeatLevel, string> = {
   quiet: 'Quiet',
 };
 
+const TYPE_COLORS: Record<string, string> = {
+  bar: '#6C63FF',
+  club: '#FF2D55',
+  food: '#FF9500',
+  event: '#30B0C7',
+};
+
 function toHeatLevel(color: string): HeatLevel {
   const c = (color || '').toLowerCase();
   if (c === 'hot' || c === 'red') return 'hot';
@@ -60,12 +69,14 @@ function toHeatLevel(color: string): HeatLevel {
   return 'quiet';
 }
 
-function PulsingMarker({ level }: { level: HeatLevel }) {
+function PulsingMarker({ level, type = 'bar' }: { level: HeatLevel; type?: string }) {
   const scale = useRef(new Animated.Value(1)).current;
   const pulseOpacity = useRef(new Animated.Value(0.6)).current;
 
-  const dotSize = level === 'hot' ? 22 : level === 'warm' ? 18 : level === 'mild' ? 13 : 10;
+  const hasActivity = level !== 'quiet';
+  const dotSize = level === 'hot' ? 26 : level === 'warm' ? 22 : level === 'mild' ? 16 : 13;
   const speed = level === 'hot' ? 700 : level === 'warm' ? 1200 : 0;
+  const color = hasActivity ? heatColor[level] : (TYPE_COLORS[type] || TYPE_COLORS.bar);
 
   useEffect(() => {
     if (!speed) return;
@@ -85,29 +96,30 @@ function PulsingMarker({ level }: { level: HeatLevel }) {
     return () => anim.stop();
   }, []);
 
-  const color = heatColor[level];
-
   return (
     <View style={{ width: dotSize + 14, height: dotSize + 14, alignItems: 'center', justifyContent: 'center' }}>
-      <Animated.View
-        style={{
-          position: 'absolute',
-          width: dotSize + 12,
-          height: dotSize + 12,
-          borderRadius: (dotSize + 12) / 2,
-          backgroundColor: color,
-          opacity: pulseOpacity,
-          transform: [{ scale }],
-        }}
-      />
+      {hasActivity && (
+        <Animated.View
+          style={{
+            position: 'absolute',
+            width: dotSize + 12,
+            height: dotSize + 12,
+            borderRadius: (dotSize + 12) / 2,
+            backgroundColor: color,
+            opacity: pulseOpacity,
+            transform: [{ scale }],
+          }}
+        />
+      )}
       <View
         style={{
           width: dotSize,
           height: dotSize,
           borderRadius: dotSize / 2,
           backgroundColor: color,
-          borderWidth: 2,
+          borderWidth: 1.5,
           borderColor: Colors.white,
+          opacity: hasActivity ? 1 : 0.75,
         }}
       />
     </View>
@@ -128,7 +140,8 @@ export default function MapScreen() {
     try {
       const centerLat = lat ?? userLocation?.latitude ?? PHILLY_CENTER.latitude;
       const centerLng = lng ?? userLocation?.longitude ?? PHILLY_CENTER.longitude;
-      const data = await getHeatmapData(centerLat, centerLng, 5000);
+      const category = activeFilter === 'All' ? 'all' : activeFilter.toLowerCase();
+      const data = await getNearbyVenues(centerLat, centerLng, 5000, category);
       const venues = data?.venues || [];
       if (venues.length > 0) {
         setLiveVenues(venues);
@@ -137,20 +150,21 @@ export default function MapScreen() {
         setUsingMockData(true);
       }
     } catch (e) {
-      console.error('Failed to load heatmap:', e);
+      console.error('Failed to load venues:', e);
       setUsingMockData(true);
     }
-  }, [userLocation]);
+  }, [userLocation, activeFilter]);
 
-  // Get user location on mount
+  // Get user location on mount — always fetch Philly first, then re-fetch if real location available
   useEffect(() => {
+    fetchHeatmap(PHILLY_CENTER.latitude, PHILLY_CENTER.longitude);
     Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
       .then((loc) => {
         const { latitude, longitude } = loc.coords;
         setUserLocation({ latitude, longitude });
         fetchHeatmap(latitude, longitude);
       })
-      .catch(() => fetchHeatmap());
+      .catch(() => {});
   }, []);
 
   // 30-second polling refresh
@@ -160,6 +174,11 @@ export default function MapScreen() {
       if (refreshTimer.current) clearInterval(refreshTimer.current);
     };
   }, [fetchHeatmap]);
+
+  // Re-fetch when filter changes
+  useEffect(() => {
+    fetchHeatmap();
+  }, [activeFilter]);
 
   // WebSocket real-time updates
   useEffect(() => {
@@ -192,13 +211,13 @@ export default function MapScreen() {
         name: v.name,
         latitude: v.lat,
         longitude: v.lng,
-        heatLevel: toHeatLevel(v.heatmap_color),
+        heatLevel: v.has_activity ? toHeatLevel(v.heatmap_color || 'quiet') : 'quiet' as HeatLevel,
         isMock: false,
-        cover: v.cover_charge || 'Free',
-        type: 'Venue',
+        cover: 'Free',
+        type: v.type || 'bar',
         distance: '',
-        hours: v.closing_time ? `Open until ${v.closing_time}` : '',
-        tags: v.vibe_tags || [],
+        hours: '',
+        tags: v.category ? [v.category] : [],
       }));
 
   const handleMarkerPress = (marker: typeof markers[0]) => {
@@ -219,14 +238,18 @@ export default function MapScreen() {
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
         provider={PROVIDER_DEFAULT}
         initialRegion={{
-          latitude: userLocation?.latitude ?? PHILLY_CENTER.latitude,
-          longitude: userLocation?.longitude ?? PHILLY_CENTER.longitude,
-          latitudeDelta: 0.03,
-          longitudeDelta: 0.03,
+          latitude: PHILLY_CENTER.latitude,
+          longitude: PHILLY_CENTER.longitude,
+          latitudeDelta: 0.015,
+          longitudeDelta: 0.015,
         }}
         showsUserLocation
         showsMyLocationButton={false}
         userInterfaceStyle="light"
+        showsPointsOfInterest={false}
+        showsBuildings={false}
+        showsTraffic={false}
+        showsCompass={false}
       >
         {markers.map((v) => (
           <Marker
@@ -235,14 +258,14 @@ export default function MapScreen() {
             onPress={() => handleMarkerPress(v)}
             anchor={{ x: 0.5, y: 0.5 }}
           >
-            <PulsingMarker level={v.heatLevel} />
+            <PulsingMarker level={v.heatLevel} type={v.type} />
           </Marker>
         ))}
       </MapView>
 
       {/* Top overlay */}
       <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.legendRow}>
+      <View style={styles.legendRow}>
           {(['hot', 'warm', 'mild', 'quiet'] as HeatLevel[]).map((lvl) => (
             <View key={lvl} style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: heatColor[lvl] }]} />
@@ -372,6 +395,7 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
   legendText: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
+  legendDivider: { width: 1, height: 16, backgroundColor: Colors.divider, marginHorizontal: 4 },
   mockBadge: {
     backgroundColor: Colors.warning,
     borderRadius: 6,

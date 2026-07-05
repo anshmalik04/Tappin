@@ -41,6 +41,7 @@ export async function uploadPhoto(o, p, c) { return apiFetch('/photos/upload', {
 export async function registerUser(phone, name, birthdate) { const f = phone.startsWith('+') ? phone : `+1${phone.replace(/\D/g, '')}`; return apiFetch('/auth/register', { method: 'POST', body: JSON.stringify({ phone_number: f, name, birthdate }) }); }
 export async function getVenueById(id) { return apiFetch(`/venues/${id}`); }
 export async function getHeatmapData(lat, lng, r = 5000) { return apiFetch(`/heatmap?lat=${lat}&lng=${lng}&radius=${r}`); }
+export async function getNearbyVenues(lat, lng, r = 5000, category = 'all') { return apiFetch(`/venues/nearby?lat=${lat}&lng=${lng}&radius=${r}&category=${category}`); }
 export async function createCheckIn(venueId, lat, lng) { return apiFetch('/check-in', { method: 'POST', body: JSON.stringify({ venue_id: venueId, lat, lng }) }); }
 export async function cancelCheckIn(id) { return apiFetch(`/check-in/${id}`, { method: 'DELETE' }); }
 export async function getPeopleAtVenue(venueId) { return apiFetch(`/venues/${venueId}/people`); }
