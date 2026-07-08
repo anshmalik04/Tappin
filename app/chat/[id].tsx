@@ -1,7 +1,7 @@
 import { Colors } from '@/constants/Colors';
 import { getMessages, getProfile, sendMessage as sendMessageApi } from '@/services/api';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -53,6 +53,7 @@ export default function ChatScreen() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [pendingSpot, setPendingSpot] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const flatListRef = useRef<FlatList<Message>>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -158,6 +159,7 @@ export default function ChatScreen() {
       </View>
 
       <FlatList
+        ref={flatListRef}
         data={messages}
         keyExtractor={(item) => item.id}
         style={styles.messageList}
@@ -166,6 +168,7 @@ export default function ChatScreen() {
           paddingBottom: 16,
           paddingTop: 8,
         }}
+        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         ListHeaderComponent={
           <View>
             {/* Meetup spot card */}
