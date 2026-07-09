@@ -72,6 +72,10 @@ export default function RootLayout() {
           options={{ headerShown: false, presentation: 'card' }}
         />
         <Stack.Screen
+          name="complete-profile"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
           name="auth/phone"
           options={{ headerShown: false }}
         />
