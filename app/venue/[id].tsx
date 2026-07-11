@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,13 @@ import {
   TouchableOpacity,
   Dimensions,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/Colors';
 import { venues } from '@/data/mockData';
+import { getVenueById } from '@/services/api';
 import { useCheckIn } from '@/context/CheckInContext';
 import { HeatDotInline } from '@/components/HeatDot';
 
@@ -23,13 +25,50 @@ const PLACEHOLDER_COLORS = ['#C9D8F0', '#B5CDEE', '#D4E4FF', '#C2D6F5'];
 export default function VenueScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const venue = venues.find((v) => v.id === id) ?? venues[0];
+
+  // Mock venue used as a base for fields the real API doesn't provide.
+  const mockVenue = venues.find((v) => v.id === id) ?? venues[0];
+
   const { isCheckedIn, toggleCheckIn, canCheckIn, checkInCount } = useCheckIn();
-  const checkedIn = isCheckedIn(venue.id);
+  const checkedIn = isCheckedIn(mockVenue.id);
   const maxReached = !canCheckIn && !checkedIn;
   const [photoIndex, setPhotoIndex] = useState(0);
 
-  const maxTraffic = Math.max(...venue.traffic.map((t) => t.level));
+  // Real venue data (name/address/type + live counts), loaded from the API.
+  const [realVenue, setRealVenue] = useState<any | null>(null);
+  const [usingMock, setUsingMock] = useState(true);
+
+  useEffect(() => {
+    if (!id) return;
+    getVenueById(id)
+      .then((data: any) => {
+        const v = data?.venue || data;
+        if (v && (v.name || v.id)) {
+          setRealVenue(v);
+          setUsingMock(false);
+        }
+      })
+      .catch((e: any) => {
+        console.error('Failed to load venue:', e);
+        setUsingMock(true);
+      });
+  }, [id]);
+
+  // Prefer real fields where available, fall back to mock.
+  const displayName = realVenue?.name || mockVenue.name;
+  const displayAddress = realVenue?.address || mockVenue.address;
+  const displayType = realVenue?.type || realVenue?.category || mockVenue.type;
+  const goingCount = typeof realVenue?.going_count === 'number' ? realVenue.going_count : null;
+  const arrivedCount = typeof realVenue?.arrived_count === 'number' ? realVenue.arrived_count : null;
+  const hasLiveCounts = goingCount !== null || arrivedCount !== null;
+
+  const maxTraffic = Math.max(...mockVenue.traffic.map((t) => t.level));
+
+  const handleCheckIn = () => {
+    const lat = realVenue?.lat ?? mockVenue.latitude;
+    const lng = realVenue?.lng ?? mockVenue.longitude;
+    toggleCheckIn(mockVenue.id, lat, lng);
+  };
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
@@ -46,7 +85,7 @@ export default function VenueScreen() {
           }}
           renderItem={({ item }) => (
             <View style={[styles.photo, { backgroundColor: item }]}>
-              <Text style={styles.photoPlaceholder}>{venue.name}</Text>
+              <Text style={styles.photoPlaceholder}>{displayName}</Text>
             </View>
           )}
         />
@@ -81,25 +120,46 @@ export default function VenueScreen() {
         {/* Venue header */}
         <View style={styles.header}>
           <View style={styles.venueNameRow}>
-            <HeatDotInline level={venue.heatLevel} size={12} />
-            <Text style={styles.venueName}>{venue.name}</Text>
+            <HeatDotInline level={mockVenue.heatLevel} size={12} />
+            <Text style={styles.venueName}>{displayName}</Text>
           </View>
-          <Text style={styles.venueAddress}>{venue.address}</Text>
-          <Text style={styles.venueType}>{venue.type}</Text>
+          <Text style={styles.venueAddress}>{displayAddress}</Text>
+          <Text style={styles.venueType}>{displayType}</Text>
         </View>
+
+        {/* Live counts (real data) */}
+        {hasLiveCounts && (
+          <View style={styles.liveCountsRow}>
+            <View style={styles.liveCountCard}>
+              <Text style={styles.liveCountValue}>{arrivedCount ?? 0}</Text>
+              <Text style={styles.liveCountLabel}>HERE NOW</Text>
+            </View>
+            <View style={[styles.liveCountCard, styles.liveCountCardMiddle]}>
+              <Text style={styles.liveCountValue}>{goingCount ?? 0}</Text>
+              <Text style={styles.liveCountLabel}>GOING</Text>
+            </View>
+          </View>
+        )}
+
+        {/* Preview-data notice for mock-derived sections */}
+        {usingMock && (
+          <View style={styles.previewNotice}>
+            <Text style={styles.previewNoticeText}>PREVIEW DATA</Text>
+          </View>
+        )}
 
         {/* Stats row */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: Colors.primary }]}>{venue.cover}</Text>
+            <Text style={[styles.statValue, { color: Colors.primary }]}>{mockVenue.cover}</Text>
             <Text style={styles.statLabel}>COVER</Text>
           </View>
           <View style={[styles.statCard, styles.statCardMiddle]}>
-            <Text style={styles.statValue}>{venue.peakHours}</Text>
+            <Text style={styles.statValue}>{mockVenue.peakHours}</Text>
             <Text style={styles.statLabel}>PEAK</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={[styles.statValue, { color: Colors.success }]}>{venue.vibe}</Text>
+            <Text style={[styles.statValue, { color: Colors.success }]}>{mockVenue.vibe}</Text>
             <Text style={styles.statLabel}>VIBE</Text>
           </View>
         </View>
@@ -107,14 +167,14 @@ export default function VenueScreen() {
         {/* Cover info */}
         <View style={styles.coverCard}>
           <Text style={styles.coverCardTitle}>💳 COVER INFO</Text>
-          <Text style={styles.coverCardText}>{venue.coverInfo}</Text>
+          <Text style={styles.coverCardText}>{mockVenue.coverInfo}</Text>
         </View>
 
         {/* Demographics */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Crowd Demographics</Text>
           <View style={styles.demoBar}>
-            {venue.demographics.map((d, i) => {
+            {mockVenue.demographics.map((d, i) => {
               const colors = [Colors.primary, '#7AB8FF', '#B8D9FF'];
               return (
                 <View
@@ -123,7 +183,7 @@ export default function VenueScreen() {
                     styles.demoSegment,
                     { flex: d.percentage, backgroundColor: colors[i % colors.length] },
                     i === 0 && { borderTopLeftRadius: 6, borderBottomLeftRadius: 6 },
-                    i === venue.demographics.length - 1 && {
+                    i === mockVenue.demographics.length - 1 && {
                       borderTopRightRadius: 6,
                       borderBottomRightRadius: 6,
                     },
@@ -133,7 +193,7 @@ export default function VenueScreen() {
             })}
           </View>
           <View style={styles.demoLabels}>
-            {venue.demographics.map((d, i) => {
+            {mockVenue.demographics.map((d, i) => {
               const colors = [Colors.primary, '#7AB8FF', '#B8D9FF'];
               return (
                 <View key={d.label} style={styles.demoLabelItem}>
@@ -151,7 +211,7 @@ export default function VenueScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Tonight's Traffic</Text>
           <View style={styles.trafficChart}>
-            {venue.traffic.map((t, i) => {
+            {mockVenue.traffic.map((t, i) => {
               const isNow = t.hour === '9pm';
               const barHeight = Math.max(8, (t.level / maxTraffic) * 80);
               return (
@@ -183,7 +243,7 @@ export default function VenueScreen() {
               checkedIn && styles.checkInBtnActive,
               maxReached && styles.checkInBtnDisabled,
             ]}
-            onPress={() => toggleCheckIn(venue.id)}
+            onPress={handleCheckIn}
             disabled={maxReached}
             activeOpacity={0.8}
           >
@@ -259,6 +319,29 @@ const styles = StyleSheet.create({
   venueName: { fontSize: 22, fontWeight: '800', color: Colors.textPrimary, flex: 1 },
   venueAddress: { fontSize: 14, color: Colors.textMuted, marginTop: 4 },
   venueType: { fontSize: 13, color: Colors.textSecondary, marginTop: 2, fontWeight: '600' },
+  liveCountsRow: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    marginBottom: 16,
+    backgroundColor: Colors.primaryLight,
+  },
+  liveCountCard: { flex: 1, alignItems: 'center', paddingVertical: 14 },
+  liveCountCardMiddle: { borderLeftWidth: 1, borderLeftColor: Colors.primary },
+  liveCountValue: { fontSize: 22, fontWeight: '800', color: Colors.primary },
+  liveCountLabel: { fontSize: 10, fontWeight: '700', color: Colors.primary, marginTop: 2, letterSpacing: 1 },
+  previewNotice: {
+    alignSelf: 'center',
+    backgroundColor: Colors.warning,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginBottom: 12,
+  },
+  previewNoticeText: { color: Colors.white, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   statsRow: {
     flexDirection: 'row',
     marginHorizontal: 20,
