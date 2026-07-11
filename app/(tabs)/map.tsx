@@ -1,7 +1,8 @@
 import HeatDot from '@/components/HeatDot';
 import { Colors } from '@/constants/Colors';
 import type { HeatLevel } from '@/data/mockData';
-import { venues } from '@/data/mockData';
+import { venues as mockVenues } from '@/data/mockData';
+import { connectWebSocket, disconnectWebSocket, getHeatmapData } from '@/services/api';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -20,6 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const { width, height } = Dimensions.get('window');
 const PHILLY_CENTER = { latitude: 39.9526, longitude: -75.1652 };
 const FILTERS = ['All', 'Bars', 'Clubs', 'Events', 'Food'];
+const REFRESH_INTERVAL_MS = 30000; // 30 seconds
 
 const heatColor: Record<HeatLevel, string> = {
   hot: Colors.hot,
@@ -34,6 +36,61 @@ const heatLabel: Record<HeatLevel, string> = {
   mild: 'Mild',
   quiet: 'Quiet',
 };
+
+// Normalized venue shape the UI renders, regardless of source (real API or mock).
+interface MapVenue {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  heatLevel: HeatLevel;
+  type: string;
+  goingCount: number | null;
+  arrivedCount: number | null;
+  // mock-only extras (undefined for real venues)
+  cover?: string;
+  distance?: string;
+  hours?: string;
+  tags?: string[];
+}
+
+// Turn a real API heatmap_score (0-100ish) into our hot/warm/mild/quiet levels.
+const scoreToLevel = (score: number): HeatLevel => {
+  if (score >= 75) return 'hot';
+  if (score >= 50) return 'warm';
+  if (score >= 25) return 'mild';
+  return 'quiet';
+};
+
+// Map a real API venue object to our normalized MapVenue shape.
+const fromApiVenue = (v: any): MapVenue => ({
+  id: String(v.id),
+  name: v.name,
+  latitude: v.lat,
+  longitude: v.lng,
+  heatLevel: scoreToLevel(Number(v.heatmap_score) || 0),
+  type: v.type || v.category || 'Venue',
+  goingCount: typeof v.going_count === 'number' ? v.going_count : null,
+  arrivedCount: typeof v.arrived_count === 'number' ? v.arrived_count : null,
+});
+
+// Map a mock venue to the same shape so the UI code is uniform.
+const fromMockVenue = (v: any): MapVenue => ({
+  id: String(v.id),
+  name: v.name,
+  latitude: v.latitude,
+  longitude: v.longitude,
+  heatLevel: v.heatLevel,
+  type: v.type,
+  goingCount: null,
+  arrivedCount: null,
+  cover: v.cover,
+  distance: v.distance,
+  hours: v.hours,
+  tags: v.tags,
+});
+
+const MOCK_MAP_VENUES: MapVenue[] = mockVenues.map(fromMockVenue);
 
 function PulsingMarker({ level }: { level: HeatLevel }) {
   const scale = useRef(new Animated.Value(1)).current;
@@ -92,8 +149,54 @@ function PulsingMarker({ level }: { level: HeatLevel }) {
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState('All');
-  const [selectedVenue, setSelectedVenue] = useState<typeof venues[0] | null>(null);
+  const [selectedVenue, setSelectedVenue] = useState<MapVenue | null>(null);
+  const [venues, setVenues] = useState<MapVenue[]>(MOCK_MAP_VENUES);
+  const [usingMock, setUsingMock] = useState(true);
   const slideUp = useRef(new Animated.Value(0)).current;
+
+  // Fetch real heatmap data; fall back to mock on failure or empty.
+  const loadVenues = async () => {
+    try {
+      const data: any = await getHeatmapData(PHILLY_CENTER.latitude, PHILLY_CENTER.longitude);
+      const list = data?.venues || data || [];
+      if (Array.isArray(list) && list.length > 0) {
+        setVenues(list.map(fromApiVenue));
+        setUsingMock(false);
+      } else {
+        setVenues(MOCK_MAP_VENUES);
+        setUsingMock(true);
+      }
+    } catch (e) {
+      console.error('Failed to load heatmap:', e);
+      setVenues(MOCK_MAP_VENUES);
+      setUsingMock(true);
+    }
+  };
+
+  useEffect(() => {
+    // Initial load
+    loadVenues();
+
+    // Refresh every 30 seconds
+    const interval = setInterval(loadVenues, REFRESH_INTERVAL_MS);
+
+    // Subscribe to live heatmap updates via WebSocket
+    connectWebSocket(
+      (payload: any) => {
+        const list = payload?.venues || payload || [];
+        if (Array.isArray(list) && list.length > 0) {
+          setVenues(list.map(fromApiVenue));
+          setUsingMock(false);
+        }
+      },
+      undefined as any // no chat handler on the map screen
+    );
+
+    return () => {
+      clearInterval(interval);
+      disconnectWebSocket();
+    };
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -150,6 +253,13 @@ export default function MapScreen() {
           </View>
         </View>
 
+        {/* Preview-data badge when falling back to mock */}
+        {usingMock && (
+          <View style={styles.previewBadge}>
+            <Text style={styles.previewBadgeText}>PREVIEW DATA</Text>
+          </View>
+        )}
+
         {/* Filter chips */}
         <ScrollView
           horizontal
@@ -204,7 +314,9 @@ export default function MapScreen() {
             <View style={styles.cardInfo}>
               <Text style={styles.cardName}>{selectedVenue.name}</Text>
               <Text style={styles.cardMeta}>
-                {selectedVenue.type} · {selectedVenue.distance} · {selectedVenue.hours}
+                {selectedVenue.type}
+                {selectedVenue.distance ? ` · ${selectedVenue.distance}` : ''}
+                {selectedVenue.hours ? ` · ${selectedVenue.hours}` : ''}
               </Text>
             </View>
             <TouchableOpacity
@@ -215,19 +327,30 @@ export default function MapScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Live counts (real venues) or cover (mock venues) */}
           <View style={styles.coverRow}>
-            <View style={styles.coverBadge}>
-              <Text style={styles.coverText}>Cover: {selectedVenue.cover}</Text>
-            </View>
+            {selectedVenue.goingCount !== null || selectedVenue.arrivedCount !== null ? (
+              <View style={styles.coverBadge}>
+                <Text style={styles.coverText}>
+                  {selectedVenue.arrivedCount ?? 0} here · {selectedVenue.goingCount ?? 0} going
+                </Text>
+              </View>
+            ) : selectedVenue.cover ? (
+              <View style={styles.coverBadge}>
+                <Text style={styles.coverText}>Cover: {selectedVenue.cover}</Text>
+              </View>
+            ) : null}
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
-            {selectedVenue.tags.map((tag, i) => (
-              <View key={i} style={styles.tag}>
-                <Text style={styles.tagText}>{tag}</Text>
-              </View>
-            ))}
-          </ScrollView>
+          {selectedVenue.tags && selectedVenue.tags.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+              {selectedVenue.tags.map((tag, i) => (
+                <View key={i} style={styles.tag}>
+                  <Text style={styles.tagText}>{tag}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          )}
         </Animated.View>
       )}
     </View>
@@ -282,6 +405,14 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   liveBadgeText: { color: Colors.white, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  previewBadge: {
+    alignSelf: 'center',
+    backgroundColor: Colors.warning,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  previewBadgeText: { color: Colors.white, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   filterRow: { paddingVertical: 2, gap: 8 },
   filterChip: {
     paddingHorizontal: 16,
