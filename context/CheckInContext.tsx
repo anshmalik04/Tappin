@@ -16,7 +16,7 @@ interface CheckInContextType {
   checkIns: CheckIn[];
   checkInCount: number;
   isCheckedIn: (venueId: string) => boolean;
-  toggleCheckIn: (venueId: string, lat: number, lng: number) => Promise<void>;
+  toggleCheckIn: (venueId: string, lat: number, lng: number, name?: string, address?: string, type?: string) => Promise<void>;
   canCheckIn: boolean;
   loading: boolean;
   error: string | null;
@@ -38,7 +38,6 @@ export function CheckInProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load active check-ins on app start
   useEffect(() => {
     const loadActiveCheckIns = async () => {
       try {
@@ -52,7 +51,6 @@ export function CheckInProvider({ children }: { children: ReactNode }) {
           })));
         }
       } catch (err) {
-        // Silently fail on load — user may not be logged in yet
         console.log('Could not load active check-ins:', err);
       }
     };
@@ -62,11 +60,17 @@ export function CheckInProvider({ children }: { children: ReactNode }) {
   const isCheckedIn = (venueId: string) =>
     checkIns.some((c) => c.venueId === venueId);
 
-  const toggleCheckIn = async (venueId: string, lat: number, lng: number) => {
+  const toggleCheckIn = async (
+    venueId: string,
+    lat: number,
+    lng: number,
+    name = '',
+    address = '',
+    type = 'bar'
+  ) => {
     const existing = checkIns.find((c) => c.venueId === venueId);
 
     if (existing) {
-      // Cancel check-in
       setLoading(true);
       setError(null);
       try {
@@ -79,7 +83,6 @@ export function CheckInProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       }
     } else {
-      // Create check-in
       if (checkIns.length >= MAX_CHECKINS) {
         setError('You can only check in to 3 venues at a time');
         return;
@@ -87,7 +90,7 @@ export function CheckInProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       setError(null);
       try {
-        const data = await createCheckIn(venueId, lat, lng);
+        const data = await createCheckIn(venueId, lat, lng, name, address, type);
         const newCheckIn: CheckIn = {
           checkInId: data.checkIn.id,
           venueId,

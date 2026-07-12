@@ -24,6 +24,7 @@ const { width, height } = Dimensions.get('window');
 const PHILLY_CENTER = { latitude: 39.9526, longitude: -75.1652 };
 const FILTERS = ['All', 'Bars', 'Clubs', 'Events', 'Food'];
 const REFRESH_INTERVAL_MS = 300000; // 5 minutes
+
 interface LiveVenue {
   id: string;
   foursquare_id: string;
@@ -340,7 +341,17 @@ export default function MapScreen() {
             </View>
             <TouchableOpacity
               style={styles.viewBtn}
-              onPress={() => router.push(`/venue/${selectedVenue.id}`)}
+              onPress={() => router.push({
+                pathname: `/venue/${selectedVenue.id}`,
+                params: {
+                  name: selectedVenue.name,
+                  lat: selectedVenue.latitude,
+                  lng: selectedVenue.longitude,
+                  type: selectedVenue.type,
+                  category: selectedVenue.tags?.[0] || '',
+                  foursquare_id: selectedVenue.id,
+                }
+              })}
             >
               <Text style={styles.viewBtnText}>View →</Text>
             </TouchableOpacity>

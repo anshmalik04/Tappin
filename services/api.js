@@ -40,9 +40,10 @@ export async function updateProfile(u) { return apiFetch('/profile', { method: '
 export async function uploadPhoto(o, p, c) { return apiFetch('/photos/upload', { method: 'POST', body: JSON.stringify({ order_index: o, is_primary: p, content_type: c }) }); }
 export async function registerUser(phone, name, birthdate) { const f = phone.startsWith('+') ? phone : `+1${phone.replace(/\D/g, '')}`; return apiFetch('/auth/register', { method: 'POST', body: JSON.stringify({ phone_number: f, name, birthdate }) }); }
 export async function getVenueById(id) { return apiFetch(`/venues/${id}`); }
+export async function getActiveCheckIns() { return apiFetch('/check-in'); }
 export async function getHeatmapData(lat, lng, r = 5000) { return apiFetch(`/heatmap?lat=${lat}&lng=${lng}&radius=${r}`); }
 export async function getNearbyVenues(lat, lng, r = 5000, category = 'all') { return apiFetch(`/venues/nearby?lat=${lat}&lng=${lng}&radius=${r}&category=${category}`); }
-export async function createCheckIn(venueId, lat, lng) { return apiFetch('/check-in', { method: 'POST', body: JSON.stringify({ venue_id: venueId, lat, lng }) }); }
+export async function createCheckIn(venueId, lat, lng, name = '', address = '', type = 'bar') { return apiFetch('/check-in', { method: 'POST', body: JSON.stringify({ venue_id: venueId, lat, lng, name, address, type }) }); }
 export async function cancelCheckIn(id) { return apiFetch(`/check-in/${id}`, { method: 'DELETE' }); }
 export async function getPeopleAtVenue(venueId) { return apiFetch(`/venues/${venueId}/people`); }
 export async function createTapIn(receiverId, venueId) { return apiFetch('/tap-in', { method: 'POST', body: JSON.stringify({ receiver_id: receiverId, venue_id: venueId }) }); }

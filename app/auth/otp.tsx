@@ -27,10 +27,12 @@ export default function OTPScreen() {
   const [countdown, setCountdown] = useState(30);
   const inputRef = useRef<TextInput>(null);
 
+  const hasSentOTP = useRef(false);
+
   useEffect(() => {
-    // Trigger the OTP send as soon as this screen mounts
     const sendOTP = async () => {
-      if (!phone) { setLoading(false); return; }
+      if (!phone || hasSentOTP.current) { setLoading(false); return; }
+      hasSentOTP.current = true;
       const result = await requestOTP(phone);
       if (!result.success) {
         setError(result.error || 'Failed to send code. Go back and try again.');
