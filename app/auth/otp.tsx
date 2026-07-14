@@ -76,7 +76,11 @@ export default function OTPScreen() {
     }
 
     setLoading(false);
-    router.replace('/(tabs)/map');
+    if (isNewUser === 'true') {
+      router.replace('/onboarding' as any);
+    } else {
+      router.replace('/(tabs)/map');
+    }
   };
 
   const handleChangeText = (val: string) => {

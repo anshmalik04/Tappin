@@ -4,15 +4,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -41,6 +41,7 @@ export default function EditProfileScreen() {
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
   const [bio, setBio] = useState('');
+  const [location, setLocation] = useState('');
   const [vibeTags, setVibeTags] = useState<string[]>([]);
   const [musicTags, setMusicTags] = useState<string[]>([]);
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -52,6 +53,7 @@ export default function EditProfileScreen() {
         setName(u.name || '');
         setAge(u.age ? String(u.age) : '');
         setBio(u.bio || '');
+        setLocation(u.location || u.neighborhood || '');
         setVibeTags(parseTagField(u.personality_tags));
         setMusicTags(parseTagField(u.music_taste));
         setPhotos(data?.photos || []);
@@ -89,6 +91,7 @@ export default function EditProfileScreen() {
         name: name.trim(),
         age: isNaN(ageNum) ? undefined : ageNum,
         bio: bio.trim(),
+        location: location.trim(),
         personality_tags: vibeTags,
         music_taste: musicTags,
       });
@@ -132,7 +135,7 @@ export default function EditProfileScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 60 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Photos section — above Bio, per design */}
+        {/* Photos section */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>PHOTOS</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoRow}>
@@ -148,18 +151,14 @@ export default function EditProfileScreen() {
             ))}
             <TouchableOpacity
               style={styles.addPhotoTile}
-              onPress={() => {
-                // Photo picker integration is a separate task — expo-image-picker
-                // needs to be installed first (npx expo install expo-image-picker)
-                console.log('Add photo tapped — picker not yet wired up');
-              }}
+              onPress={() => console.log('Add photo tapped')}
             >
               <Text style={styles.addPhotoPlus}>+</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
 
-        {/* Name & Age */}
+        {/* Name */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>NAME</Text>
           <TextInput
@@ -171,6 +170,7 @@ export default function EditProfileScreen() {
           />
         </View>
 
+        {/* Age */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>AGE</Text>
           <TextInput
@@ -180,6 +180,26 @@ export default function EditProfileScreen() {
             placeholder="Your age"
             placeholderTextColor={Colors.textMuted}
             keyboardType="number-pad"
+          />
+        </View>
+
+        {/* Location */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>LOCATION</Text>
+          <View style={styles.locationCard}>
+            <Text style={styles.locationIcon}>📍</Text>
+            <View style={styles.locationInfo}>
+              <Text style={styles.locationTitle}>Your neighborhood</Text>
+              <Text style={styles.locationSubtitle}>Only your neighborhood name will appear on your profile</Text>
+            </View>
+          </View>
+          <TextInput
+            style={[styles.input, { marginTop: 10 }]}
+            value={location}
+            onChangeText={setLocation}
+            placeholder="e.g. Center City, Old City, Fishtown..."
+            placeholderTextColor={Colors.textMuted}
+            autoCapitalize="words"
           />
         </View>
 
@@ -263,12 +283,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   photoRow: { gap: 10, paddingRight: 20 },
-  photoTile: {
-    width: 90,
-    height: 90,
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
+  photoTile: { width: 90, height: 90, borderRadius: 14, overflow: 'hidden' },
   primaryBadge: {
     position: 'absolute',
     bottom: 6,
@@ -301,6 +316,18 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   bioInput: { minHeight: 80, textAlignVertical: 'top' },
+  locationCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: Colors.primaryLight,
+    borderRadius: 12,
+    padding: 14,
+    gap: 10,
+  },
+  locationIcon: { fontSize: 20 },
+  locationInfo: { flex: 1 },
+  locationTitle: { fontSize: 14, fontWeight: '700', color: Colors.primary },
+  locationSubtitle: { fontSize: 12, color: Colors.primary, opacity: 0.7, marginTop: 3, lineHeight: 17 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     backgroundColor: Colors.background,

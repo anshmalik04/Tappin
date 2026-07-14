@@ -121,35 +121,37 @@ export default function TonightScreen() {
         <Text style={[styles.sectionTitle, { color: Colors.primary }]}>EVENTS NEARBY</Text>
       </View>
 
-      {events.map((event) => (
-        <TouchableOpacity
-          key={event.id}
-          style={styles.eventCard}
-          onPress={() => router.push(`/venue/${event.venueId}`)}
-          activeOpacity={0.9}
-        >
-          <View style={styles.eventInfo}>
-            <Text style={styles.eventName}>{event.name}</Text>
-            <Text style={styles.eventMeta}>
-              {event.time} · {event.distance} · {event.venue}
-            </Text>
-          </View>
-          <View style={styles.eventActions}>
-            <TouchableOpacity
-              style={styles.goingBtn}
-              onPress={(e) => e.stopPropagation()}
-            >
-              <Text style={styles.goingBtnText}>I'm Going</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.interestedBtn}
-              onPress={(e) => e.stopPropagation()}
-            >
-              <Text style={styles.interestedBtnText}>Interested</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      ))}
+      {/* Under Construction overlay */}
+      <View style={styles.underConstructionContainer}>
+        {/* Blurred event cards behind */}
+        <View style={styles.blurredContent} pointerEvents="none">
+          {events.map((event) => (
+            <View key={event.id} style={styles.eventCard}>
+              <View style={styles.eventInfo}>
+                <Text style={styles.eventName}>{event.name}</Text>
+                <Text style={styles.eventMeta}>
+                  {event.time} · {event.distance} · {event.venue}
+                </Text>
+              </View>
+              <View style={styles.eventActions}>
+                <View style={styles.goingBtn}>
+                  <Text style={styles.goingBtnText}>I'm Going</Text>
+                </View>
+                <View style={styles.interestedBtn}>
+                  <Text style={styles.interestedBtnText}>Interested</Text>
+                </View>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        {/* Overlay */}
+        <View style={styles.constructionOverlay}>
+          <Text style={styles.constructionEmoji}></Text>
+          <Text style={styles.constructionText}>Under Construction</Text>
+          <Text style={styles.constructionSubtext}>Events are coming soon!</Text>
+        </View>
+      </View>
     </ScrollView>
   );
 }
@@ -207,6 +209,39 @@ const styles = StyleSheet.create({
   checkInBtnText: { fontSize: 14, fontWeight: '700', color: Colors.primary },
   checkInBtnTextActive: { color: Colors.success },
   checkInBtnTextDisabled: { color: Colors.textMuted },
+  underConstructionContainer: {
+    position: 'relative',
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  blurredContent: {
+    opacity: 0.15,
+  },
+  constructionOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    borderRadius: 16,
+    paddingVertical: 32,
+  },
+  constructionEmoji: { fontSize: 40, marginBottom: 12 },
+  constructionText: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    marginBottom: 6,
+  },
+  constructionSubtext: {
+    fontSize: 14,
+    color: Colors.textMuted,
+    fontWeight: '500',
+  },
   eventCard: {
     backgroundColor: Colors.white,
     borderRadius: 16,

@@ -1,16 +1,17 @@
 import { Colors } from '@/constants/Colors';
-import type { User } from '@/data/mockData';
 import { users } from '@/data/mockData';
+import { getPeopleAtVenue } from '@/services/api';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRef, useState } from 'react';
+import { router } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
 import {
-    Animated,
-    Dimensions,
-    PanResponder,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Animated,
+  Dimensions,
+  PanResponder,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -18,31 +19,36 @@ const { width, height } = Dimensions.get('window');
 const SWIPE_THRESHOLD = width * 0.25;
 const CARD_HEIGHT = height * 0.6;
 
-function UserCard({ user }: { user: User }) {
+function UserCard({ user, onPress }: { user: any; onPress: () => void }) {
   return (
-    <LinearGradient colors={['#B5CDEE', '#7FAADF']} style={styles.photo}>
-      <View style={styles.matchBadge}>
-        <Text style={styles.matchBadgeText}>{user.matchPercent}% match</Text>
-      </View>
-      <Text style={styles.photoInitial}>{user.initial}</Text>
-
-      <View style={styles.cardInfo}>
-        <Text style={styles.cardName}>
-          {user.name}, {user.age}
-        </Text>
-        {user.currentVenue && <Text style={styles.cardVenue}>📍 {user.currentVenue}</Text>}
-        <Text style={styles.cardBio} numberOfLines={2}>
-          {user.bio}
-        </Text>
-        <View style={styles.tagRow}>
-          {user.personality.slice(0, 3).map((trait) => (
-            <View key={trait} style={styles.tag}>
-              <Text style={styles.tagText}>{trait}</Text>
-            </View>
-          ))}
+    <TouchableOpacity activeOpacity={0.95} onPress={onPress} style={{ flex: 1 }}>
+      <LinearGradient colors={['#B5CDEE', '#7FAADF']} style={styles.photo}>
+        <View style={styles.matchBadge}>
+          <Text style={styles.matchBadgeText}>{user.matchPercent || user.match_score || 87}% match</Text>
         </View>
-      </View>
-    </LinearGradient>
+        <Text style={styles.photoInitial}>
+          {(user.name || user.initial || '?').charAt(0).toUpperCase()}
+        </Text>
+
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardName}>
+            {user.name}, {user.age}
+          </Text>
+          {/* Location removed for safety */}
+          <Text style={styles.cardBio} numberOfLines={2}>
+            {user.bio}
+          </Text>
+          <View style={styles.tagRow}>
+            {(user.personality || user.vibe_tags || []).slice(0, 3).map((trait: string) => (
+              <View key={trait} style={styles.tag}>
+                <Text style={styles.tagText}>{trait}</Text>
+              </View>
+            ))}
+          </View>
+          <Text style={styles.tapHint}>Tap to view full profile</Text>
+        </View>
+      </LinearGradient>
+    </TouchableOpacity>
   );
 }
 
@@ -50,9 +56,26 @@ export default function PeopleScreen() {
   const insets = useSafeAreaInsets();
   const [index, setIndex] = useState(0);
   const [banner, setBanner] = useState<{ text: string; color: string } | null>(null);
+  const [people, setPeople] = useState<any[]>(users);
+  const [usingMockData, setUsingMockData] = useState(true);
 
   const position = useRef(new Animated.ValueXY()).current;
   const bannerOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // Try to load real people — fall back to mock
+    getPeopleAtVenue('nearby')
+      .then((data) => {
+        const list = data?.people || data?.users || [];
+        if (list.length > 0) {
+          setPeople(list);
+          setUsingMockData(false);
+        }
+      })
+      .catch(() => {
+        // Stay on mock data
+      });
+  }, []);
 
   const showBanner = (text: string, color: string) => {
     setBanner({ text, color });
@@ -120,12 +143,38 @@ export default function PeopleScreen() {
     extrapolate: 'clamp',
   });
 
-  const currentUser = users[index];
+  const currentUser = people[index];
+
+  const handleViewProfile = () => {
+    if (!currentUser) return;
+    const userId = currentUser.id || currentUser.userId || 'mock';
+    router.push({
+      pathname: '/profile-view/[id]',
+      params: {
+        id: userId,
+        name: currentUser.name,
+        age: currentUser.age,
+        bio: currentUser.bio,
+        matchPercent: currentUser.matchPercent || currentUser.match_score || 87,
+        personality: (currentUser.personality || currentUser.vibe_tags || []).join(','),
+        music: (currentUser.musicTaste || currentUser.music_taste || []).join(','),
+      }
+    });
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <Text style={styles.title}>People Nearby</Text>
-      <Text style={styles.subtitle}>Swipe to Tap In or Pass</Text>
+      <View style={styles.headerRow}>
+        <View>
+          <Text style={styles.title}>People Nearby</Text>
+          <Text style={styles.subtitle}>Swipe to Tap In or Pass</Text>
+        </View>
+        {usingMockData && (
+          <View style={styles.previewBadge}>
+            <Text style={styles.previewBadgeText}>PREVIEW</Text>
+          </View>
+        )}
+      </View>
 
       {banner && (
         <Animated.View
@@ -157,7 +206,7 @@ export default function PeopleScreen() {
               },
             ]}
           >
-            <UserCard user={currentUser} />
+            <UserCard user={currentUser} onPress={handleViewProfile} />
             <Animated.View style={[styles.stamp, styles.likeStamp, { opacity: likeOpacity }]}>
               <Text style={[styles.stampText, { color: Colors.success }]}>TAP IN</Text>
             </Animated.View>
@@ -196,8 +245,16 @@ export default function PeopleScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background, paddingHorizontal: 16 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
   title: { fontSize: 28, fontWeight: '800', color: Colors.textPrimary, marginTop: 8 },
   subtitle: { fontSize: 14, color: Colors.textMuted, marginTop: 4, marginBottom: 12 },
+  previewBadge: {
+    backgroundColor: Colors.warning,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  previewBadgeText: { fontSize: 9, fontWeight: '800', color: Colors.white, letterSpacing: 0.5 },
   cardArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   card: {
     width: width - 32,
@@ -237,7 +294,6 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   cardName: { fontSize: 24, fontWeight: '800', color: Colors.white },
-  cardVenue: { fontSize: 13, fontWeight: '700', color: Colors.white, marginTop: 4 },
   cardBio: { fontSize: 14, color: 'rgba(255,255,255,0.9)', marginTop: 8, lineHeight: 20 },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
   tag: {
@@ -247,6 +303,13 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   tagText: { fontSize: 12, fontWeight: '600', color: Colors.white },
+  tapHint: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 8,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
   stamp: {
     position: 'absolute',
     top: 40,

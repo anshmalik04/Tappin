@@ -13,62 +13,13 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const settings: {
-  icon: string;
-  label: string;
-  description: string;
-  iconBg: string;
-  iconColor: string;
-  route?: string;
-}[] = [
-  {
-    icon: '📸',
-    label: 'Photos',
-    description: '4 photos uploaded',
-    iconBg: Colors.primaryLight,
-    iconColor: Colors.primary,
-  },
-  {
-    icon: '🎵',
-    label: 'Music Taste',
-    description: 'Hip Hop, R&B, Indie',
-    iconBg: Colors.primaryLight,
-    iconColor: Colors.primary,
-  },
-  {
-    icon: '✦',
-    label: 'Personality',
-    description: '5 traits selected',
-    iconBg: '#FFF9E6',
-    iconColor: Colors.warning,
-  },
-  {
-    icon: '🛡',
-    label: 'Emergency Contacts',
-    description: '2 contacts set up',
-    iconBg: Colors.dangerLight,
-    iconColor: Colors.danger,
-    route: '/emergency-contacts',
-  },
-  {
-    icon: '👁',
-    label: 'Visibility',
-    description: 'Visible when app is open',
-    iconBg: Colors.successLight,
-    iconColor: Colors.success,
-  },
-  {
-    icon: '🔔',
-    label: 'Notifications',
-    description: 'Hotspot alerts on',
-    iconBg: Colors.mildLight,
-    iconColor: Colors.mild,
-  },
-];
-
 interface ProfileUser {
   name: string;
   is_verified: boolean;
+  photo_count?: number;
+  music_taste?: string[];
+  vibe_tags?: string[];
+  emergency_contact_count?: number;
 }
 
 export default function ProfileScreen() {
@@ -84,7 +35,6 @@ export default function ProfileScreen() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Refresh every time this tab comes into focus (e.g. after editing profile)
   useFocusEffect(
     useCallback(() => {
       loadProfile();
@@ -93,6 +43,69 @@ export default function ProfileScreen() {
 
   const displayName = user?.name || 'Your Name';
   const initial = displayName.charAt(0).toUpperCase();
+
+  const photoCount = user?.photo_count ?? 4;
+  const musicTaste = user?.music_taste?.join(', ') || 'Hip Hop, R&B, Indie';
+  const personalityCount = user?.vibe_tags?.length ?? 5;
+  const emergencyCount = user?.emergency_contact_count ?? 2;
+
+  const settings: {
+    icon: string;
+    label: string;
+    description: string;
+    iconBg: string;
+    iconColor: string;
+    route: string;
+  }[] = [
+    {
+      icon: '📸',
+      label: 'Photos',
+      description: `${photoCount} photo${photoCount !== 1 ? 's' : ''} uploaded`,
+      iconBg: Colors.primaryLight,
+      iconColor: Colors.primary,
+      route: '/edit-profile',
+    },
+    {
+      icon: '🎵',
+      label: 'Music Taste',
+      description: musicTaste,
+      iconBg: Colors.primaryLight,
+      iconColor: Colors.primary,
+      route: '/edit-profile',
+    },
+    {
+      icon: '✦',
+      label: 'Personality',
+      description: `${personalityCount} traits selected`,
+      iconBg: '#FFF9E6',
+      iconColor: Colors.warning,
+      route: '/edit-profile',
+    },
+    {
+      icon: '🛡',
+      label: 'Emergency Contacts',
+      description: `${emergencyCount} contact${emergencyCount !== 1 ? 's' : ''} set up`,
+      iconBg: Colors.dangerLight,
+      iconColor: Colors.danger,
+      route: '/emergency-contacts',
+    },
+    {
+      icon: '👁',
+      label: 'Visibility',
+      description: 'Visible when app is open',
+      iconBg: Colors.successLight,
+      iconColor: Colors.success,
+      route: '/settings/visibility',
+    },
+    {
+      icon: '🔔',
+      label: 'Notifications',
+      description: 'Hotspot alerts on',
+      iconBg: Colors.mildLight,
+      iconColor: Colors.mild,
+      route: '/settings/notifications',
+    },
+  ];
 
   return (
     <ScrollView
@@ -129,15 +142,14 @@ export default function ProfileScreen() {
             <TouchableOpacity
               style={styles.settingRow}
               activeOpacity={0.7}
-              onPress={() => s.route && router.push(s.route as any)}
-              disabled={!s.route}
+              onPress={() => router.push(s.route as any)}
             >
               <View style={[styles.settingIcon, { backgroundColor: s.iconBg }]}>
                 <Text style={styles.settingIconEmoji}>{s.icon}</Text>
               </View>
               <View style={styles.settingContent}>
                 <Text style={styles.settingLabel}>{s.label}</Text>
-                <Text style={styles.settingDesc}>{s.description}</Text>
+                <Text style={styles.settingDesc} numberOfLines={1}>{s.description}</Text>
               </View>
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
@@ -146,7 +158,6 @@ export default function ProfileScreen() {
         ))}
       </View>
 
-      {/* TEMPORARY: Sign Out button for testing auth flow */}
       <TouchableOpacity
         style={styles.signOutBtn}
         onPress={async () => {
