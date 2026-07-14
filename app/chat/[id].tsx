@@ -1,7 +1,7 @@
 import { Colors } from '@/constants/Colors';
 import { getMessages, getProfile, sendMessage as sendMessageApi } from '@/services/api';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -49,8 +49,11 @@ export default function ChatScreen() {
   const [loading, setLoading] = useState(true);
   const [inputText, setInputText] = useState('');
   const [meetupSpot, setMeetupSpot] = useState<string | null>(null);
+  const [contactsNotified, setContactsNotified] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [pendingSpot, setPendingSpot] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const flatListRef = useRef<FlatList<Message>>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -95,9 +98,27 @@ export default function ChatScreen() {
     }
   };
 
+  // Tapping a spot opens the confirmation modal (does NOT auto-share).
   const selectMeetupSpot = (spot: string) => {
-    setMeetupSpot(spot);
     setDropdownOpen(false);
+    setPendingSpot(spot);
+  };
+
+  // User-triggered choice, per Safety & Privacy doc. Picking a spot always shares
+  // it with your match; `share` decides whether to ALSO alert emergency contacts.
+  const confirmShare = (share: boolean) => {
+    const spot = pendingSpot;
+    setPendingSpot(null);
+    if (!spot) return;
+    setMeetupSpot(spot);
+    if (share) {
+      setContactsNotified(true);
+      // TODO(backend): once a notify endpoint + Twilio are live, alert the
+      // user's emergency contacts here, e.g.:
+      //   await notifyEmergencyContacts(matchId, spot);
+    } else {
+      setContactsNotified(false);
+    }
     handleSend(spot);
   };
 
@@ -138,6 +159,7 @@ export default function ChatScreen() {
       </View>
 
       <FlatList
+        ref={flatListRef}
         data={messages}
         keyExtractor={(item) => item.id}
         style={styles.messageList}
@@ -146,6 +168,7 @@ export default function ChatScreen() {
           paddingBottom: 16,
           paddingTop: 8,
         }}
+        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         ListHeaderComponent={
           <View>
             {/* Meetup spot card */}
@@ -158,11 +181,15 @@ export default function ChatScreen() {
                 <Text style={styles.meetupDropdownText}>{meetupSpot || 'Choose a spot'}</Text>
                 <Text style={styles.dropdownArrow}>▾</Text>
               </TouchableOpacity>
-              <Text style={styles.meetupNote}>Shared with your emergency contacts</Text>
+              <Text style={styles.meetupNote}>
+                {contactsNotified
+                  ? 'Shared with your emergency contacts'
+                  : 'You choose whether to share this with your emergency contacts'}
+              </Text>
             </View>
 
-            {/* Safety banner - only shows once a meetup spot has actually been shared */}
-            {meetupSpot && (
+            {/* Safety banner - only shows once the user has chosen to share the meetup */}
+            {contactsNotified && meetupSpot && (
               <View style={styles.safetyBanner}>
                 <Text style={styles.safetyBannerTitle}>✓ Emergency contacts notified of meetup</Text>
                 <Text style={styles.safetyBannerSub}>
@@ -238,6 +265,30 @@ export default function ChatScreen() {
             ))}
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Share-with-emergency-contacts confirmation modal */}
+      <Modal
+        visible={pendingSpot !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPendingSpot(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmCard}>
+            <Text style={styles.confirmTitle}>Share this meetup?</Text>
+            <Text style={styles.confirmBody}>
+              Let your emergency contacts know you&apos;re meeting at {pendingSpot}
+              {venueName ? ` · ${venueName}` : ''}?
+            </Text>
+            <TouchableOpacity style={styles.confirmShareBtn} onPress={() => confirmShare(true)}>
+              <Text style={styles.confirmShareBtnText}>Share</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.confirmCancelBtn} onPress={() => confirmShare(false)}>
+              <Text style={styles.confirmCancelBtnText}>Not now</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </KeyboardAvoidingView>
   );
@@ -420,4 +471,46 @@ const styles = StyleSheet.create({
   dropdownItemText: { fontSize: 15, color: Colors.textPrimary, fontWeight: '500' },
   dropdownItemTextActive: { color: Colors.primary, fontWeight: '700' },
   checkmark: { fontSize: 14, color: Colors.primary, fontWeight: '700' },
+  confirmCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 20,
+    padding: 22,
+    width: '82%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  confirmTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  confirmBody: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 18,
+  },
+  confirmShareBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  confirmShareBtnText: { fontSize: 15, fontWeight: '700', color: Colors.white },
+  confirmCancelBtn: {
+    backgroundColor: Colors.background,
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  confirmCancelBtnText: { fontSize: 15, fontWeight: '700', color: Colors.textSecondary },
 });

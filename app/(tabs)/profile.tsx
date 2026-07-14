@@ -13,24 +13,45 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-interface ProfileUser {
-  name: string;
-  is_verified: boolean;
-  photo_count?: number;
-  music_taste?: string[];
-  vibe_tags?: string[];
-  emergency_contact_count?: number;
+interface ProfileData {
+  user: {
+    name: string;
+    is_verified: boolean;
+    personality_tags: any;
+    music_taste: any;
+  } | null;
+  photos: any[];
+  emergency_contacts: any[];
 }
+
+const parseTagField = (field: any): string[] => {
+  if (Array.isArray(field)) return field;
+  if (typeof field === 'string') {
+    try {
+      const parsed = JSON.parse(field);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const [user, setUser] = useState<ProfileUser | null>(null);
+  const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadProfile = useCallback(() => {
     setLoading(true);
     getProfile()
-      .then((data: any) => setUser(data?.user || null))
+      .then((data: any) => {
+        setProfileData({
+          user: data?.user || null,
+          photos: data?.photos || [],
+          emergency_contacts: data?.emergency_contacts || [],
+        });
+      })
       .catch((e: any) => console.error('Failed to load profile:', e))
       .finally(() => setLoading(false));
   }, []);
@@ -41,26 +62,36 @@ export default function ProfileScreen() {
     }, [loadProfile])
   );
 
+  const user = profileData?.user;
+  const photos = profileData?.photos || [];
+  const emergencyContacts = profileData?.emergency_contacts || [];
+  const vibes = parseTagField(user?.personality_tags);
+  const music = parseTagField(user?.music_taste);
+
   const displayName = user?.name || 'Your Name';
   const initial = displayName.charAt(0).toUpperCase();
 
-  const photoCount = user?.photo_count ?? 4;
-  const musicTaste = user?.music_taste?.join(', ') || 'Hip Hop, R&B, Indie';
-  const personalityCount = user?.vibe_tags?.length ?? 5;
-  const emergencyCount = user?.emergency_contact_count ?? 2;
+  const photoDesc = photos.length > 0
+    ? `${photos.length} photo${photos.length === 1 ? '' : 's'} uploaded`
+    : 'No photos yet';
 
-  const settings: {
-    icon: string;
-    label: string;
-    description: string;
-    iconBg: string;
-    iconColor: string;
-    route: string;
-  }[] = [
+  const musicDesc = music.length > 0
+    ? music.slice(0, 3).join(', ') + (music.length > 3 ? ` +${music.length - 3}` : '')
+    : 'No music taste set';
+
+  const vibeDesc = vibes.length > 0
+    ? `${vibes.length} trait${vibes.length === 1 ? '' : 's'} selected`
+    : 'No traits selected';
+
+  const contactDesc = emergencyContacts.length > 0
+    ? `${emergencyContacts.length} contact${emergencyContacts.length === 1 ? '' : 's'} set up`
+    : 'No contacts set up';
+
+  const settings = [
     {
       icon: '📸',
       label: 'Photos',
-      description: `${photoCount} photo${photoCount !== 1 ? 's' : ''} uploaded`,
+      description: photoDesc,
       iconBg: Colors.primaryLight,
       iconColor: Colors.primary,
       route: '/edit-profile',
@@ -68,7 +99,7 @@ export default function ProfileScreen() {
     {
       icon: '🎵',
       label: 'Music Taste',
-      description: musicTaste,
+      description: musicDesc,
       iconBg: Colors.primaryLight,
       iconColor: Colors.primary,
       route: '/edit-profile',
@@ -76,7 +107,7 @@ export default function ProfileScreen() {
     {
       icon: '✦',
       label: 'Personality',
-      description: `${personalityCount} traits selected`,
+      description: vibeDesc,
       iconBg: '#FFF9E6',
       iconColor: Colors.warning,
       route: '/edit-profile',
@@ -84,7 +115,7 @@ export default function ProfileScreen() {
     {
       icon: '🛡',
       label: 'Emergency Contacts',
-      description: `${emergencyCount} contact${emergencyCount !== 1 ? 's' : ''} set up`,
+      description: contactDesc,
       iconBg: Colors.dangerLight,
       iconColor: Colors.danger,
       route: '/emergency-contacts',
@@ -115,7 +146,6 @@ export default function ProfileScreen() {
     >
       <Text style={styles.title}>My Profile</Text>
 
-      {/* User card */}
       <View style={styles.userCard}>
         {loading ? (
           <ActivityIndicator color={Colors.primary} style={{ flex: 1 }} />
@@ -135,7 +165,6 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Settings list */}
       <View style={styles.settingsList}>
         {settings.map((s, i) => (
           <React.Fragment key={s.label}>

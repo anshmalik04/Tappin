@@ -36,16 +36,26 @@ interface Photo {
   is_primary: boolean;
 }
 
-export default function EditProfileScreen() {
+const parseTagField = (field: any): string[] => {
+  if (Array.isArray(field)) return field;
+  if (typeof field === 'string') {
+    try {
+      const parsed = JSON.parse(field);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+export default function CompleteProfileScreen() {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  const [name, setName] = useState('');
-  const [age, setAge] = useState('');
   const [bio, setBio] = useState('');
-  const [location, setLocation] = useState('');
   const [vibeTags, setVibeTags] = useState<string[]>([]);
   const [musicTags, setMusicTags] = useState<string[]>([]);
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -54,10 +64,7 @@ export default function EditProfileScreen() {
     try {
       const data: any = await getProfile();
       const u = data?.user || {};
-      setName(u.name || '');
-      setAge(u.age ? String(u.age) : '');
       setBio(u.bio || '');
-      setLocation(u.location || u.neighborhood || '');
       setVibeTags(parseTagField(u.personality_tags));
       setMusicTags(parseTagField(u.music_taste));
       setPhotos(data?.photos || []);
@@ -71,19 +78,6 @@ export default function EditProfileScreen() {
   useEffect(() => {
     loadProfile();
   }, []);
-
-  const parseTagField = (field: any): string[] => {
-    if (Array.isArray(field)) return field;
-    if (typeof field === 'string') {
-      try {
-        const parsed = JSON.parse(field);
-        return Array.isArray(parsed) ? parsed : [];
-      } catch {
-        return [];
-      }
-    }
-    return [];
-  };
 
   const toggleTag = (tag: string, list: string[], setList: (l: string[]) => void) => {
     if (list.includes(tag)) {
@@ -126,7 +120,6 @@ export default function EditProfileScreen() {
       });
 
       await loadProfile();
-      Alert.alert('Photo Uploaded! 📸');
     } catch (e: any) {
       console.error('Photo upload failed:', e);
       Alert.alert('Upload Failed', e?.message || 'Something went wrong uploading your photo.');
@@ -135,24 +128,26 @@ export default function EditProfileScreen() {
     }
   };
 
-  const handleSave = async () => {
+  // Save whatever the user has filled in, then head to the map.
+  const finish = async () => {
     setSaving(true);
     try {
-      const ageNum = parseInt(age, 10);
       await updateProfile({
-        name: name.trim(),
-        age: isNaN(ageNum) ? undefined : ageNum,
         bio: bio.trim(),
-        location: location.trim(),
         personality_tags: vibeTags,
         music_taste: musicTags,
       });
-      router.back();
     } catch (e: any) {
       console.error('Failed to save profile:', e);
     } finally {
       setSaving(false);
+      // Go to the map regardless — profile can be finished later from My Profile.
+      router.replace('/(tabs)' as any);
     }
+  };
+
+  const skip = () => {
+    router.replace('/(tabs)' as any);
   };
 
   if (loading) {
@@ -168,24 +163,23 @@ export default function EditProfileScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.headerCancel}>Cancel</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Edit Profile</Text>
-        <TouchableOpacity onPress={handleSave} disabled={saving}>
-          {saving ? (
-            <ActivityIndicator size="small" color={Colors.primary} />
-          ) : (
-            <Text style={styles.headerSave}>Save</Text>
-          )}
+        <Text style={styles.headerTitle}>Complete Your Profile</Text>
+        <TouchableOpacity onPress={skip}>
+          <Text style={styles.headerSkip}>Skip</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 60 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
         showsVerticalScrollIndicator={false}
       >
+        <Text style={styles.subtitle}>
+          Add a few details so people can get to know you. You can always finish this later.
+        </Text>
+
+        {/* Photos */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>PHOTOS</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoRow}>
@@ -203,11 +197,7 @@ export default function EditProfileScreen() {
                 )}
               </View>
             ))}
-            <TouchableOpacity
-              style={styles.addPhotoTile}
-              onPress={handleAddPhoto}
-              disabled={uploading}
-            >
+            <TouchableOpacity style={styles.addPhotoTile} onPress={handleAddPhoto} disabled={uploading}>
               {uploading ? (
                 <ActivityIndicator size="small" color={Colors.primary} />
               ) : (
@@ -217,48 +207,7 @@ export default function EditProfileScreen() {
           </ScrollView>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>NAME</Text>
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="Your name"
-            placeholderTextColor={Colors.textMuted}
-          />
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>AGE</Text>
-          <TextInput
-            style={styles.input}
-            value={age}
-            onChangeText={(t) => setAge(t.replace(/\D/g, '').slice(0, 2))}
-            placeholder="Your age"
-            placeholderTextColor={Colors.textMuted}
-            keyboardType="number-pad"
-          />
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>LOCATION</Text>
-          <View style={styles.locationCard}>
-            <Text style={styles.locationIcon}>📍</Text>
-            <View style={styles.locationInfo}>
-              <Text style={styles.locationTitle}>Your neighborhood</Text>
-              <Text style={styles.locationSubtitle}>Only your neighborhood name will appear on your profile</Text>
-            </View>
-          </View>
-          <TextInput
-            style={[styles.input, { marginTop: 10 }]}
-            value={location}
-            onChangeText={setLocation}
-            placeholder="e.g. Center City, Old City, Fishtown..."
-            placeholderTextColor={Colors.textMuted}
-            autoCapitalize="words"
-          />
-        </View>
-
+        {/* Bio */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>BIO</Text>
           <TextInput
@@ -272,6 +221,7 @@ export default function EditProfileScreen() {
           />
         </View>
 
+        {/* Vibe tags */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>VIBE</Text>
           <View style={styles.chipRow}>
@@ -290,6 +240,7 @@ export default function EditProfileScreen() {
           </View>
         </View>
 
+        {/* Music tags */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>MUSIC</Text>
           <View style={styles.chipRow}>
@@ -308,6 +259,17 @@ export default function EditProfileScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Bottom action */}
+      <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
+        <TouchableOpacity style={styles.continueBtn} onPress={finish} disabled={saving}>
+          {saving ? (
+            <ActivityIndicator size="small" color={Colors.white} />
+          ) : (
+            <Text style={styles.continueBtnText}>Continue to map</Text>
+          )}
+        </TouchableOpacity>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -324,9 +286,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.divider,
   },
-  headerCancel: { fontSize: 16, color: Colors.textMuted },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: Colors.textPrimary },
-  headerSave: { fontSize: 16, fontWeight: '700', color: Colors.primary },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: Colors.textPrimary },
+  headerSkip: { fontSize: 16, fontWeight: '600', color: Colors.textMuted },
+  subtitle: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    paddingHorizontal: 20,
+    marginTop: 16,
+    lineHeight: 20,
+  },
   section: { paddingHorizontal: 20, marginTop: 24 },
   sectionLabel: {
     fontSize: 11,
@@ -369,18 +337,6 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   bioInput: { minHeight: 80, textAlignVertical: 'top' },
-  locationCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: Colors.primaryLight,
-    borderRadius: 12,
-    padding: 14,
-    gap: 10,
-  },
-  locationIcon: { fontSize: 20 },
-  locationInfo: { flex: 1 },
-  locationTitle: { fontSize: 14, fontWeight: '700', color: Colors.primary },
-  locationSubtitle: { fontSize: 12, color: Colors.primary, opacity: 0.7, marginTop: 3, lineHeight: 17 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     backgroundColor: Colors.background,
@@ -395,4 +351,22 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
   chipTextActive: { color: Colors.primary },
   chipTextActiveMusic: { color: Colors.success },
+  footer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    backgroundColor: Colors.white,
+    borderTopWidth: 1,
+    borderTopColor: Colors.divider,
+  },
+  continueBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  continueBtnText: { fontSize: 16, fontWeight: '700', color: Colors.white },
 });
