@@ -1,7 +1,7 @@
 import { Colors } from '@/constants/Colors';
 import { getProfile, updateProfile, uploadPhoto } from '@/services/api';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {

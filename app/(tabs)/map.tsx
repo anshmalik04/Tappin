@@ -1,13 +1,16 @@
 // @ts-nocheck
+import CrowdsourceModal from '@/components/CrowdsourceModal';
 import HeatDot from '@/components/HeatDot';
 import { Colors } from '@/constants/Colors';
 import type { HeatLevel } from '@/data/mockData';
 import { venues as mockVenues } from '@/data/mockData';
-import { connectWebSocket, disconnectWebSocket, getNearbyVenues } from '@/services/api';
+import { connectWebSocket, disconnectWebSocket, getNearbyVenues, updateVenueCrowdsource } from '@/services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   Dimensions,
   ScrollView,
@@ -23,7 +26,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const { width, height } = Dimensions.get('window');
 const PHILLY_CENTER = { latitude: 39.9526, longitude: -75.1652 };
 const FILTERS = ['All', 'Bars', 'Clubs', 'Events', 'Food'];
-const REFRESH_INTERVAL_MS = 300000; // 5 minutes
+const REFRESH_INTERVAL_MS = 300000;
 
 interface LiveVenue {
   id: string;
@@ -134,8 +137,54 @@ export default function MapScreen() {
   const [liveVenues, setLiveVenues] = useState<LiveVenue[]>([]);
   const [usingMockData, setUsingMockData] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [crowdsourceVisible, setCrowdsourceVisible] = useState(false);
+  const [crowdsourceVenue, setCrowdsourceVenue] = useState<{ venueId: string; venueName: string } | null>(null);
   const slideUp = useRef(new Animated.Value(0)).current;
   const refreshTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Check for pending crowdsource event when map comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      const checkPendingCrowdsource = async () => {
+        try {
+          const raw = await AsyncStorage.getItem('pending_crowdsource');
+          if (!raw) return;
+          const event = JSON.parse(raw);
+
+          // Only show if event is fresh (within last 10 minutes)
+          const age = Date.now() - event.timestamp;
+          if (age > 10 * 60 * 1000) {
+            await AsyncStorage.removeItem('pending_crowdsource');
+            return;
+          }
+
+          // Find venue name from live venues
+          const venue = liveVenues.find(v => v.id === event.venueId || v.foursquare_id === event.venueId);
+          const venueName = venue?.name || 'this venue';
+
+          await AsyncStorage.removeItem('pending_crowdsource');
+          setCrowdsourceVenue({ venueId: event.venueId, venueName });
+          setCrowdsourceVisible(true);
+        } catch (e) {
+          console.error('Failed to check pending crowdsource:', e);
+        }
+      };
+
+      checkPendingCrowdsource();
+    }, [liveVenues])
+  );
+
+  const handleCrowdsourceSubmit = async ({ music, cover, crowd, venueId }) => {
+    setCrowdsourceVisible(false);
+    try {
+      await updateVenueCrowdsource(venueId, music, cover, crowd);
+      Alert.alert('Thanks! 🎉', 'Your update helps everyone at Tappin find the best spots.');
+      // Refresh map to show updated data
+      fetchHeatmap();
+    } catch (e) {
+      console.error('Crowdsource submit failed:', e);
+    }
+  };
 
   const fetchHeatmap = useCallback(async (lat?: number, lng?: number) => {
     try {
@@ -156,7 +205,6 @@ export default function MapScreen() {
     }
   }, [userLocation, activeFilter]);
 
-  // Get user location on mount — always fetch Philly first, then re-fetch if real location available
   useEffect(() => {
     fetchHeatmap(PHILLY_CENTER.latitude, PHILLY_CENTER.longitude);
     Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
@@ -168,7 +216,6 @@ export default function MapScreen() {
       .catch(() => {});
   }, []);
 
-  // 30-second polling refresh
   useEffect(() => {
     refreshTimer.current = setInterval(() => fetchHeatmap(), REFRESH_INTERVAL_MS);
     return () => {
@@ -176,12 +223,10 @@ export default function MapScreen() {
     };
   }, [fetchHeatmap]);
 
-  // Re-fetch when filter changes
   useEffect(() => {
     fetchHeatmap();
   }, [activeFilter]);
 
-  // WebSocket real-time updates
   useEffect(() => {
     connectWebSocket(
       (_heatmapPayload) => {
@@ -266,7 +311,7 @@ export default function MapScreen() {
 
       {/* Top overlay */}
       <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}>
-      <View style={styles.legendRow}>
+        <View style={styles.legendRow}>
           {(['hot', 'warm', 'mild', 'quiet'] as HeatLevel[]).map((lvl) => (
             <View key={lvl} style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: heatColor[lvl] }]} />
@@ -373,6 +418,17 @@ export default function MapScreen() {
             </ScrollView>
           )}
         </Animated.View>
+      )}
+
+      {/* Crowdsource modal */}
+      {crowdsourceVenue && (
+        <CrowdsourceModal
+          visible={crowdsourceVisible}
+          venueName={crowdsourceVenue.venueName}
+          venueId={crowdsourceVenue.venueId}
+          onSubmit={handleCrowdsourceSubmit}
+          onDismiss={() => setCrowdsourceVisible(false)}
+        />
       )}
     </View>
   );
