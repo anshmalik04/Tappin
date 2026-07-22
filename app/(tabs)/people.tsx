@@ -2,6 +2,7 @@ import { Colors } from '@/constants/Colors';
 import { useCheckIn } from '@/context/CheckInContext';
 import { users as mockUsers } from '@/data/mockData';
 import { createTapIn, getPeopleAtVenue } from '@/services/api';
+import { subscribeToBlocks } from '@/services/moderation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -105,6 +106,9 @@ export default function PeopleScreen() {
   const [usingMockData, setUsingMockData] = useState(true);
   const [loading, setLoading] = useState(false);
   const [matchedWith, setMatchedWith] = useState<Person | null>(null);
+  const [blockedIds, setBlockedIds] = useState<string[]>([]);
+
+  useEffect(() => subscribeToBlocks(setBlockedIds), []);
 
   const position = useRef(new Animated.ValueXY()).current;
   const bannerOpacity = useRef(new Animated.Value(0)).current;
@@ -259,7 +263,12 @@ export default function PeopleScreen() {
     extrapolate: 'clamp',
   });
 
-  const currentPerson = people[index] ?? null;
+  // Blocked users never appear in the deck. Filtering here rather than at
+  // fetch time means a block made on the profile screen takes effect the
+  // moment you navigate back, with no refetch.
+  const visiblePeople = people.filter((p) => !blockedIds.includes(p.id));
+
+  const currentPerson = visiblePeople[index] ?? null;
   personRef.current = currentPerson;
 
   const handleViewProfile = () => {

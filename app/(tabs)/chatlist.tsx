@@ -1,5 +1,6 @@
 import { Colors } from '@/constants/Colors';
 import { getMatches } from '@/services/api';
+import { subscribeToBlocks } from '@/services/moderation';
 import { subscribeToChat } from '@/services/realtime';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
@@ -43,6 +44,9 @@ export default function ChatListScreen() {
   const insets = useSafeAreaInsets();
   const [matches, setMatches] = useState<Match[]>([]);
   const [loadingMatches, setLoadingMatches] = useState(true);
+  const [blockedIds, setBlockedIds] = useState<string[]>([]);
+
+  useEffect(() => subscribeToBlocks(setBlockedIds), []);
 
   const loadMatches = useCallback(() => {
     return getMatches()
@@ -79,6 +83,11 @@ export default function ChatListScreen() {
     return unsubscribe;
   }, []);
 
+  // Blocked users vanish from the list entirely, both rows and match circles.
+  const visibleMatches = matches.filter(
+    (m) => !blockedIds.includes(String(m.other_user_id))
+  );
+
   const formatTime = (iso: string | null) => {
     if (!iso) return '';
     const d = new Date(iso);
@@ -91,6 +100,7 @@ export default function ChatListScreen() {
       params: {
         id: m.match_id,
         otherUserName: m.other_user_name || 'Match',
+        otherUserId: m.other_user_id,
         venueName: m.venue_name || '',
       },
     } as any);
@@ -105,13 +115,13 @@ export default function ChatListScreen() {
         <View style={styles.matchesLoading}>
           <ActivityIndicator size="small" color={Colors.primary} />
         </View>
-      ) : matches.length > 0 ? (
+      ) : visibleMatches.length > 0 ? (
         <View style={styles.matchesSection}>
           <Text style={styles.matchesHeading}>
-            {matches.length} {matches.length === 1 ? 'MATCH' : 'MATCHES'}
+            {visibleMatches.length} {visibleMatches.length === 1 ? 'MATCH' : 'MATCHES'}
           </Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }}>
-            {matches.map((m) => (
+            {visibleMatches.map((m) => (
               <TouchableOpacity
                 key={m.match_id}
                 style={styles.matchUser}
@@ -143,7 +153,7 @@ export default function ChatListScreen() {
       {/* Chat threads */}
       {!loadingMatches && (
         <FlatList
-          data={matches}
+          data={visibleMatches}
           keyExtractor={(item) => item.match_id}
           contentContainerStyle={{ paddingBottom: insets.bottom + 100, paddingHorizontal: 16, paddingTop: 8 }}
           ItemSeparatorComponent={() => <View style={styles.divider} />}

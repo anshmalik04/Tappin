@@ -1,10 +1,13 @@
 import { Colors } from '@/constants/Colors';
 import { getMessages, getProfile, sendMessage as sendMessageApi } from '@/services/api';
+import ReportModal from '@/components/ReportModal';
+import { blockUser } from '@/services/moderation';
 import { subscribeToChat } from '@/services/realtime';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -46,11 +49,13 @@ interface Message {
 }
 
 export default function ChatScreen() {
-  const { id, otherUserName, venueName } = useLocalSearchParams<{
-    id: string;
-    otherUserName?: string;
-    venueName?: string;
-  }>();
+  const { id, otherUserName, venueName, otherUserId: otherUserIdParam } =
+    useLocalSearchParams<{
+      id: string;
+      otherUserName?: string;
+      venueName?: string;
+      otherUserId?: string;
+    }>();
   const insets = useSafeAreaInsets();
 
   const matchId = Array.isArray(id) ? id[0] : id;
@@ -65,6 +70,9 @@ export default function ChatScreen() {
   const [pendingSpot, setPendingSpot] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const flatListRef = useRef<FlatList<Message>>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [reportTarget, setReportTarget] = useState<Message | null>(null);
+  const [reportProfile, setReportProfile] = useState(false);
 
   // Appends only if we haven't already got this message id. The sender gets
   // their own message twice — once from the POST response, once echoed over
@@ -156,6 +164,43 @@ export default function ChatScreen() {
     handleSend(spot);
   };
 
+  // Not every entry point passes the other user's id (match-confirmation
+  // doesn't), so fall back to the sender of the first message that isn't mine.
+  const otherUserId =
+    (otherUserIdParam ? String(otherUserIdParam) : '') ||
+    (myUserId
+      ? String(messages.find((m) => m.sender_id !== myUserId)?.sender_id || '')
+      : '');
+
+  // Silent block (Safety doc, section 3). No notification to the other party.
+  const handleBlock = () => {
+    setMenuOpen(false);
+    if (!otherUserId) {
+      Alert.alert('Cannot block yet', 'Send or receive a message first.');
+      return;
+    }
+    Alert.alert(
+      `Block ${otherUserName || 'this user'}?`,
+      'They will disappear from your chats and from People at Venue. They are not told you blocked them.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            await blockUser(otherUserId);
+            router.back();
+          },
+        },
+      ]
+    );
+  };
+
+  const promptReportMessage = (msg: Message) => {
+    if (!otherUserId || msg.sender_id === myUserId) return;
+    setReportTarget(msg);
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -189,6 +234,9 @@ export default function ChatScreen() {
         </View>
         <TouchableOpacity style={styles.safetyBtn}>
           <Text style={styles.safetyBtnText}>🛡 Safety</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.moreBtn} onPress={() => setMenuOpen(true)}>
+          <Text style={styles.moreBtnText}>{'\u22EF'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -241,11 +289,16 @@ export default function ChatScreen() {
           const isMe = myUserId !== null && item.sender_id === myUserId;
           return (
             <View style={[styles.messageRow, isMe && styles.messageRowMe]}>
-              <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
+              <TouchableOpacity
+                activeOpacity={isMe ? 1 : 0.7}
+                onLongPress={() => promptReportMessage(item)}
+                delayLongPress={400}
+                style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}
+              >
                 <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
                   {item.content}
                 </Text>
-              </View>
+              </TouchableOpacity>
               <Text style={styles.timestamp}>{formatTime(item.created_at)}</Text>
             </View>
           );
@@ -325,6 +378,57 @@ export default function ChatScreen() {
           </View>
         </View>
       </Modal>
+      {/* Block / report menu */}
+      <Modal
+        visible={menuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuOpen(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setMenuOpen(false)}
+        >
+          <View style={styles.menuCard}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuOpen(false);
+                setReportProfile(true);
+              }}
+            >
+              <Text style={styles.menuItemText}>{'\u2691'}  Report</Text>
+            </TouchableOpacity>
+            <View style={styles.menuDivider} />
+            <TouchableOpacity style={styles.menuItem} onPress={handleBlock}>
+              <Text style={[styles.menuItemText, styles.menuItemDanger]}>
+                {'\u2298'}  Block
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.menuDivider} />
+            <TouchableOpacity style={styles.menuItem} onPress={() => setMenuOpen(false)}>
+              <Text style={styles.menuCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <ReportModal
+        visible={reportProfile}
+        userId={otherUserId}
+        userName={otherUserName ? String(otherUserName) : undefined}
+        onClose={() => setReportProfile(false)}
+      />
+
+      <ReportModal
+        visible={reportTarget !== null}
+        userId={otherUserId}
+        userName={otherUserName ? String(otherUserName) : undefined}
+        messageId={reportTarget?.id}
+        messagePreview={reportTarget?.content}
+        onClose={() => setReportTarget(null)}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -365,6 +469,19 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   safetyBtnText: { fontSize: 12, fontWeight: '700', color: Colors.danger },
+  moreBtn: { paddingHorizontal: 4, paddingVertical: 6 },
+  moreBtnText: { fontSize: 20, color: Colors.textMuted, fontWeight: '800' },
+  menuCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 18,
+    width: '78%',
+    overflow: 'hidden',
+  },
+  menuItem: { paddingVertical: 16, alignItems: 'center' },
+  menuItemText: { fontSize: 16, fontWeight: '600', color: Colors.textPrimary },
+  menuItemDanger: { color: Colors.hot, fontWeight: '700' },
+  menuCancelText: { fontSize: 16, fontWeight: '600', color: Colors.textMuted },
+  menuDivider: { height: 1, backgroundColor: Colors.divider },
   messageList: { flex: 1 },
   meetupCard: {
     backgroundColor: Colors.white,
