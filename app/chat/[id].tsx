@@ -203,6 +203,7 @@ export default function ChatScreen() {
           paddingTop: 8,
         }}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
         ListHeaderComponent={
           <View>
             {/* Meetup spot card */}

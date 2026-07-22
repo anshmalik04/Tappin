@@ -112,6 +112,10 @@ export default function PeopleScreen() {
   // panResponder is built once, so it would capture stale state.
   // These refs give the gesture handler the current values.
   const personRef = useRef<Person | null>(null);
+  // Blocks a second swipe while a card is still animating off. Without this,
+  // a fast double-swipe fires goToNext twice for the same person: duplicate
+  // Tap In, and the next card gets skipped without ever being seen.
+  const animatingRef = useRef(false);
   const venueRef = useRef<string | null>(null);
   venueRef.current = activeVenueId;
 
@@ -186,6 +190,7 @@ export default function PeopleScreen() {
         showBanner('Passed', Colors.textMuted);
       }
       position.setValue({ x: 0, y: 0 });
+      animatingRef.current = false;
       setIndex((prev) => prev + 1);
     },
     [position, sendTapIn, showBanner]
@@ -196,12 +201,18 @@ export default function PeopleScreen() {
 
   const animateOffscreen = useCallback(
     (direction: 'left' | 'right', dy = 0) => {
+      if (animatingRef.current) return;
+      animatingRef.current = true;
       const toX = direction === 'right' ? width + 100 : -width - 100;
       Animated.timing(position, {
         toValue: { x: toX, y: dy },
         duration: 250,
         useNativeDriver: false,
-      }).start(() => goToNextRef.current(direction));
+      }).start(({ finished }) => {
+        // An interrupted animation still calls back. Only advance on a real finish.
+        if (finished) goToNextRef.current(direction);
+        else animatingRef.current = false;
+      });
     },
     [position]
   );
@@ -211,7 +222,8 @@ export default function PeopleScreen() {
 
   const panResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 5,
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        !animatingRef.current && Math.abs(gesture.dx) > 5,
       onPanResponderMove: (_, gesture) => {
         position.setValue({ x: gesture.dx, y: gesture.dy });
       },
