@@ -1,6 +1,8 @@
 // @ts-nocheck
 import { Colors } from '@/constants/Colors';
+import ReportModal from '@/components/ReportModal';
 import { createTapIn } from '@/services/api';
+import { blockUser } from '@/services/moderation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
@@ -9,6 +11,7 @@ import {
   Alert,
   Dimensions,
   FlatList,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -32,6 +35,8 @@ export default function ProfileViewScreen() {
   const [tapping, setTapping] = useState(false);
   const [tapped, setTapped] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const traits = personality
     ? (Array.isArray(personality) ? personality : String(personality).split(','))
@@ -53,6 +58,26 @@ export default function ProfileViewScreen() {
     } finally {
       setTapping(false);
     }
+  };
+
+  // Silent block: the other user is never notified (Safety doc, section 3).
+  const handleBlock = () => {
+    setMenuOpen(false);
+    Alert.alert(
+      `Block ${name || 'this user'}?`,
+      'They will disappear from People at Venue and your chats. They are not told you blocked them.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            await blockUser(String(id));
+            router.back();
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -83,6 +108,14 @@ export default function ProfileViewScreen() {
           onPress={() => router.back()}
         >
           <Text style={styles.backBtnText}>←</Text>
+        </TouchableOpacity>
+
+        {/* Overflow menu */}
+        <TouchableOpacity
+          style={[styles.moreBtn, { top: insets.top + 12 }]}
+          onPress={() => setMenuOpen(true)}
+        >
+          <Text style={styles.moreBtnText}>{'\u22EF'}</Text>
         </TouchableOpacity>
 
         {/* Match badge */}
@@ -153,6 +186,49 @@ export default function ProfileViewScreen() {
           )}
         </TouchableOpacity>
       </View>
+
+      {/* Block / report menu */}
+      <Modal
+        visible={menuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuOpen(false)}
+      >
+        <TouchableOpacity
+          style={styles.menuOverlay}
+          activeOpacity={1}
+          onPress={() => setMenuOpen(false)}
+        >
+          <View style={styles.menuCard}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuOpen(false);
+                setReportOpen(true);
+              }}
+            >
+              <Text style={styles.menuItemText}>{'\u2691'}  Report</Text>
+            </TouchableOpacity>
+            <View style={styles.menuDivider} />
+            <TouchableOpacity style={styles.menuItem} onPress={handleBlock}>
+              <Text style={[styles.menuItemText, styles.menuItemDanger]}>
+                {'\u2298'}  Block
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.menuDivider} />
+            <TouchableOpacity style={styles.menuItem} onPress={() => setMenuOpen(false)}>
+              <Text style={styles.menuCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <ReportModal
+        visible={reportOpen}
+        userId={String(id)}
+        userName={name ? String(name) : undefined}
+        onClose={() => setReportOpen(false)}
+      />
     </View>
   );
 }
@@ -251,4 +327,34 @@ const styles = StyleSheet.create({
   tapInBtn: { flex: 2, backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   tapInBtnDone: { backgroundColor: Colors.success },
   tapInBtnText: { fontSize: 16, fontWeight: '700', color: Colors.white },
+  moreBtn: {
+    position: 'absolute',
+    right: 16,
+    top: 64,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
+  },
+  moreBtnText: { fontSize: 20, color: Colors.white, fontWeight: '800' },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  menuCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 18,
+    width: '78%',
+    overflow: 'hidden',
+  },
+  menuItem: { paddingVertical: 16, alignItems: 'center' },
+  menuItemText: { fontSize: 16, fontWeight: '600', color: Colors.textPrimary },
+  menuItemDanger: { color: Colors.hot, fontWeight: '700' },
+  menuCancelText: { fontSize: 16, fontWeight: '600', color: Colors.textMuted },
+  menuDivider: { height: 1, backgroundColor: Colors.divider },
 });
