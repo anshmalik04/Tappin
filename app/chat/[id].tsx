@@ -1,7 +1,8 @@
 import { Colors } from '@/constants/Colors';
 import { getMessages, getProfile, sendMessage as sendMessageApi } from '@/services/api';
+import { subscribeToChat } from '@/services/realtime';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -15,6 +16,14 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// services/api.js is untyped JS; `meetupSpot = null` makes TS infer the param
+// as `null`, so passing a string fails. Narrow it here at the boundary.
+const sendMessageTyped = sendMessageApi as (
+  matchId: string,
+  content: string,
+  meetupSpot?: string | null
+) => Promise<any>;
 
 const MEETUP_SPOTS = [
   'DJ Set Area',
@@ -44,6 +53,8 @@ export default function ChatScreen() {
   }>();
   const insets = useSafeAreaInsets();
 
+  const matchId = Array.isArray(id) ? id[0] : id;
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,13 +66,24 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const flatListRef = useRef<FlatList<Message>>(null);
 
+  // Appends only if we haven't already got this message id. The sender gets
+  // their own message twice — once from the POST response, once echoed over
+  // the socket — so every append path goes through here.
+  const appendMessage = useCallback((incoming: Message) => {
+    if (!incoming?.id) return;
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === incoming.id)) return prev;
+      return [...prev, incoming];
+    });
+    if (incoming.meetup_spot) setMeetupSpot(incoming.meetup_spot);
+  }, []);
+
   useEffect(() => {
-    if (!id) return;
-    const matchId = Array.isArray(id) ? id[0] : id;
+    if (!matchId) return;
 
     Promise.all([getMessages(matchId), getProfile()])
       .then(([messagesData, profileData]: [any, any]) => {
-        const msgs = messagesData?.messages || [];
+        const msgs: Message[] = messagesData?.messages || [];
         setMessages(msgs);
         setMyUserId(profileData?.user?.id || null);
 
@@ -70,7 +92,19 @@ export default function ChatScreen() {
       })
       .catch((e: any) => console.error('Failed to load chat:', e))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [matchId]);
+
+  // Real-time messages. Payload shape isn't pinned down yet, so accept either
+  // the message directly or wrapped under `message`.
+  useEffect(() => {
+    if (!matchId) return;
+    const unsubscribe = subscribeToChat((payload: any) => {
+      const incoming: Message = payload?.message ?? payload;
+      if (!incoming || String(incoming.match_id) !== String(matchId)) return;
+      appendMessage(incoming);
+    });
+    return unsubscribe;
+  }, [matchId, appendMessage]);
 
   const formatTime = (iso: string) => {
     return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
@@ -79,17 +113,17 @@ export default function ChatScreen() {
   const handleSend = async (spotOverride?: string) => {
     const text = inputText.trim();
     if (!text && !spotOverride) return;
-    if (!id) return;
-
-    const matchId = Array.isArray(id) ? id[0] : id;
+    if (!matchId) return;
 
     setSending(true);
     try {
-      const result = await sendMessageApi(matchId, text || `📍 Meeting at ${spotOverride}`, spotOverride ?? null);
-      const newMessage = result?.data;
-      if (newMessage) {
-        setMessages((prev) => [...prev, newMessage]);
-      }
+      const result = await sendMessageTyped(
+        matchId,
+        text || `📍 Meeting at ${spotOverride}`,
+        spotOverride ?? null
+      );
+      const newMessage = result?.data ?? result?.message;
+      if (newMessage) appendMessage(newMessage);
       setInputText('');
     } catch (e) {
       console.error('Failed to send message:', e);
@@ -113,8 +147,8 @@ export default function ChatScreen() {
     setMeetupSpot(spot);
     if (share) {
       setContactsNotified(true);
-      // TODO(backend): once a notify endpoint + Twilio are live, alert the
-      // user's emergency contacts here, e.g.:
+      // TODO(backend): once a notify endpoint + Twilio compliance profile are
+      // live, alert the user's emergency contacts here, e.g.:
       //   await notifyEmergencyContacts(matchId, spot);
     } else {
       setContactsNotified(false);

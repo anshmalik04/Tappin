@@ -1,8 +1,9 @@
 import { Colors } from '@/constants/Colors';
 import { getMatches } from '@/services/api';
+import { subscribeToChat } from '@/services/realtime';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -28,24 +29,71 @@ interface Match {
   last_message_at: string | null;
 }
 
+const timeOf = (m: Match) => {
+  const stamp = m.last_message_at || m.matched_at;
+  const t = stamp ? new Date(stamp).getTime() : 0;
+  return Number.isNaN(t) ? 0 : t;
+};
+
+// Most recent activity first. Matches with no messages fall back to when the
+// match was made, so a brand new match still surfaces at the top.
+const sortMatches = (list: Match[]) => [...list].sort((a, b) => timeOf(b) - timeOf(a));
+
 export default function ChatListScreen() {
   const insets = useSafeAreaInsets();
   const [matches, setMatches] = useState<Match[]>([]);
   const [loadingMatches, setLoadingMatches] = useState(true);
 
-  useEffect(() => {
-    getMatches()
+  const loadMatches = useCallback(() => {
+    return getMatches()
       .then((data: any) => {
-        setMatches(data?.matches || []);
+        setMatches(sortMatches(data?.matches || []));
       })
       .catch((e: any) => console.error('Failed to load matches:', e))
       .finally(() => setLoadingMatches(false));
+  }, []);
+
+  // Refetch every time the tab regains focus — a Tap In made on the People tab
+  // creates a match this screen would otherwise never see.
+  useFocusEffect(
+    useCallback(() => {
+      loadMatches();
+    }, [loadMatches])
+  );
+
+  // Live preview updates without a refetch.
+  useEffect(() => {
+    const unsubscribe = subscribeToChat((payload: any) => {
+      const msg = payload?.message ?? payload;
+      if (!msg?.match_id) return;
+      setMatches((prev) =>
+        sortMatches(
+          prev.map((m) =>
+            String(m.match_id) === String(msg.match_id)
+              ? { ...m, last_message: msg.content, last_message_at: msg.created_at }
+              : m
+          )
+        )
+      );
+    });
+    return unsubscribe;
   }, []);
 
   const formatTime = (iso: string | null) => {
     if (!iso) return '';
     const d = new Date(iso);
     return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  };
+
+  const openChat = (m: Match) => {
+    router.push({
+      pathname: '/chat/[id]',
+      params: {
+        id: m.match_id,
+        otherUserName: m.other_user_name || 'Match',
+        venueName: m.venue_name || '',
+      },
+    } as any);
   };
 
   return (
@@ -67,7 +115,16 @@ export default function ChatListScreen() {
               <TouchableOpacity
                 key={m.match_id}
                 style={styles.matchUser}
-                onPress={() => router.push(`/user/${m.other_user_id}?venueId=${m.venue_id}` as any)}
+                onPress={() =>
+                  router.push({
+                    pathname: '/profile-view/[id]',
+                    params: {
+                      id: m.other_user_id,
+                      name: m.other_user_name,
+                      bio: m.other_user_bio,
+                    },
+                  } as any)
+                }
               >
                 <LinearGradient colors={['#B5CDEE', '#7FAADF']} style={styles.matchPhoto}>
                   <Text style={styles.matchInitial}>
@@ -83,7 +140,7 @@ export default function ChatListScreen() {
         </View>
       ) : null}
 
-      {/* Chat threads - now from real matches data */}
+      {/* Chat threads */}
       {!loadingMatches && (
         <FlatList
           data={matches}
@@ -99,7 +156,7 @@ export default function ChatListScreen() {
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.row}
-              onPress={() => router.push(`/chat/${item.match_id}`)}
+              onPress={() => openChat(item)}
               activeOpacity={0.8}
             >
               <View style={styles.avatar}>
